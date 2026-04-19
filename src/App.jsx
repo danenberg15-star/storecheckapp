@@ -3,7 +3,7 @@ import { Camera, Mic, FileText, Loader, Square, Wifi, WifiOff, LogOut, LogIn, Ch
 import { storage, db, auth, provider } from './firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { collection, addDoc } from 'firebase/firestore';
-import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
+import { signInWithRedirect, signOut, onAuthStateChanged, getRedirectResult } from 'firebase/auth';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -17,6 +17,11 @@ function App() {
   const fileInputRef = useRef(null);
 
   useEffect(() => {
+    // Check for redirect result on load
+    getRedirectResult(auth).catch((error) => {
+      console.error("Redirect Result Error:", error.message);
+    });
+
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
     });
@@ -26,7 +31,6 @@ function App() {
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
-    // PWA Install prompt listener
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
       setDeferredPrompt(e);
@@ -43,16 +47,15 @@ function App() {
     if (!deferredPrompt) return;
     deferredPrompt.prompt();
     const { outcome } = await deferredPrompt.userChoice;
-    if (outcome === 'accepted') {
-      setDeferredPrompt(null);
-    }
+    if (outcome === 'accepted') setDeferredPrompt(null);
   };
 
   const handleLogin = async () => {
     try {
-      await signInWithPopup(auth, provider);
+      // Changed to Redirect for better mobile support
+      await signInWithRedirect(auth, provider);
     } catch (error) {
-      alert("Error: " + error.message);
+      alert("Login Error: " + error.message);
     }
   };
 
@@ -69,13 +72,13 @@ function App() {
       const url = await getDownloadURL(storageRef);
       setImages(prev => [...prev, url]);
     } catch (error) {
-      alert("Upload failed.");
+      alert("Upload failed. Make sure you are the authorized user.");
     } finally { setIsUploading(false); }
   };
 
   const startRecording = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) return alert("Not supported");
+    if (!SpeechRecognition) return alert("Speech recognition not supported in this browser.");
     const recognition = new SpeechRecognition();
     recognition.lang = 'he-IL';
     recognition.onstart = () => setIsRecording(true);
@@ -98,9 +101,10 @@ function App() {
     return (
       <div style={loginContainerStyle}>
         <div style={loginCardStyle}>
-          <h1>StoreCheck</h1>
+          <h1 style={{ marginBottom: '10px' }}>StoreCheck</h1>
+          <p style={{ color: '#666', marginBottom: '20px' }}>Please login with authorized account</p>
           <button style={loginBtnStyle} onClick={handleLogin}>
-            <LogIn size={20} /> Google Login
+            <LogIn size={20} /> Login with Google
           </button>
         </div>
       </div>
@@ -116,9 +120,9 @@ function App() {
           {notes.map((n, i) => <p key={i} style={noteItemStyle}>{n}</p>)}
         </div>
         <div style={gridStyle}>
-          {images.map((u, i) => <img key={i} src={u} style={reportImgStyle} />)}
+          {images.map((u, i) => <img key={i} src={u} style={reportImgStyle} alt="store" />)}
         </div>
-        <button onClick={() => window.print()} style={printBtnStyle}>Save PDF</button>
+        <button onClick={() => window.print()} style={printBtnStyle}>Save Report</button>
       </div>
     );
   }
@@ -133,7 +137,7 @@ function App() {
         <div style={{ display: 'flex', gap: '10px' }}>
           {deferredPrompt && (
             <button onClick={handleInstallClick} style={installBtnStyle}>
-              <Download size={18} /> Install App
+              <Download size={18} /> Install
             </button>
           )}
           <button onClick={handleLogout} style={logoutBtnStyle}><LogOut size={20} /></button>
@@ -155,7 +159,7 @@ function App() {
 
       <div style={summaryPreviewStyle}>
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <span>{notes.length} Notes Collected</span>
+          <span>{notes.length} notes</span>
           {notes.length > 0 && <button onClick={() => setShowReport(true)} style={genBtnStyle}>Report</button>}
         </div>
         {notes.slice(-1).map((n, i) => <p key={i} style={{ fontSize: '14px', marginTop: '10px' }}>{n}</p>)}
@@ -165,13 +169,13 @@ function App() {
 }
 
 const loginContainerStyle = { display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#f0f2f5' };
-const loginCardStyle = { padding: '40px', backgroundColor: 'white', borderRadius: '25px', textAlign: 'center' };
-const loginBtnStyle = { display: 'flex', alignItems: 'center', gap: '10px', padding: '15px 30px', backgroundColor: '#4285F4', color: 'white', border: 'none', borderRadius: '12px' };
+const loginCardStyle = { padding: '40px', backgroundColor: 'white', borderRadius: '25px', textAlign: 'center', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' };
+const loginBtnStyle = { display: 'flex', alignItems: 'center', gap: '10px', padding: '15px 30px', backgroundColor: '#4285F4', color: 'white', border: 'none', borderRadius: '12px', cursor: 'pointer', fontWeight: 'bold' };
 const containerStyle = { padding: '20px', maxWidth: '500px', margin: '0 auto', fontFamily: 'Arial', minHeight: '100vh' };
 const statusBarStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' };
-const avatarStyle = { width: '35px', height: '35px', backgroundColor: '#3498db', color: 'white', borderRadius: '50%', display: 'flex', justifyContent: 'center', alignItems: 'center' };
-const logoutBtnStyle = { background: 'none', border: 'none', color: '#95a5a6' };
-const installBtnStyle = { display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 10px', backgroundColor: '#2ecc71', color: 'white', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold' };
+const avatarStyle = { width: '35px', height: '35px', backgroundColor: '#3498db', color: 'white', borderRadius: '50%', display: 'flex', justifyContent: 'center', alignItems: 'center', fontWeight: 'bold' };
+const logoutBtnStyle = { background: 'none', border: 'none', color: '#95a5a6', cursor: 'pointer' };
+const installBtnStyle = { display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 10px', backgroundColor: '#2ecc71', color: 'white', border: 'none', borderRadius: '8px', fontSize: '12px' };
 const actionGridStyle = { display: 'flex', gap: '15px', marginBottom: '30px' };
 const btnStyle = { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', padding: '20px', backgroundColor: '#2c3e50', color: 'white', border: 'none', borderRadius: '20px', flex: 1, fontWeight: 'bold' };
 const summaryPreviewStyle = { padding: '20px', backgroundColor: 'white', borderRadius: '20px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)' };
