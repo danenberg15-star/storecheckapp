@@ -3,7 +3,7 @@ import { Camera, Mic, FileText, Loader, Square, Wifi, WifiOff, LogOut, LogIn, Ch
 import { storage, db, auth, provider } from './firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { collection, addDoc, doc, updateDoc, getDocs, query, where } from 'firebase/firestore';
-import { signInWithRedirect, signOut, onAuthStateChanged, getRedirectResult } from 'firebase/auth';
+import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -11,7 +11,7 @@ function App() {
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   
   // App Navigation States
-  const [view, setView] = useState('dashboard'); // 'dashboard', 'tour', 'report'
+  const [view, setView] = useState('dashboard');
   const [reports, setReports] = useState([]);
   const [activeReport, setActiveReport] = useState(null);
   const [newReportTitle, setNewReportTitle] = useState('');
@@ -26,8 +26,6 @@ function App() {
 
   // Initialization & Auth
   useEffect(() => {
-    getRedirectResult(auth).catch((error) => console.error("Redirect Error:", error));
-
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       if (currentUser) {
@@ -53,7 +51,7 @@ function App() {
     };
   }, []);
 
-  // Save active state continuously to survive phone calls / accidental closes
+  // Save active state continuously
   useEffect(() => {
     if (activeReport && user) {
       localStorage.setItem(`saved_report_${user.uid}`, JSON.stringify(activeReport));
@@ -89,7 +87,10 @@ function App() {
   };
 
   const handleLogin = async () => {
-    try { await signInWithRedirect(auth, provider); } 
+    try { 
+      // Changed BACK to Popup to prevent PWA standalone crash
+      await signInWithPopup(auth, provider); 
+    } 
     catch (error) { alert("Login Error: " + error.message); }
   };
 
@@ -117,7 +118,7 @@ function App() {
       setNewReportTitle('');
       setView('tour');
     } catch (error) {
-      alert("Error creating report. Check network and Firebase rules.");
+      alert("Error creating report.");
     }
   };
 
@@ -149,7 +150,7 @@ function App() {
       await updateDoc(doc(db, "reports", activeReport.id), { images: updatedImages, updatedAt: updatedReport.updatedAt });
       setActiveReport(updatedReport);
     } catch (error) {
-      alert("Upload failed. Make sure you upgraded Firebase to Blaze plan.");
+      alert("Upload failed.");
     } finally { 
       setIsUploading(false); 
     }
@@ -192,8 +193,6 @@ function App() {
     }
   };
 
-  // --- VIEWS ---
-
   if (!user) {
     return (
       <div style={loginContainerStyle}>
@@ -212,12 +211,12 @@ function App() {
     return (
       <div style={reportContainerStyle} dir="rtl">
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
-          <button onClick={() => setView('tour')} style={backBtnStyle}><ArrowRight size={20} /> חזרה לסיור</button>
+          <button onClick={() => setView('tour')} style={backBtnStyle}><ArrowRight size={20} /> חזרה</button>
           <button onClick={() => window.print()} style={printBtnStyle}>שמור PDF</button>
         </div>
         <div style={reportHeaderStyle}>
           <h1>{activeReport.title}</h1>
-          <p>תאריך יצירה: {new Date(activeReport.createdAt).toLocaleDateString('he-IL')}</p>
+          <p>{new Date(activeReport.createdAt).toLocaleDateString('he-IL')}</p>
         </div>
         <div style={{ marginTop: '20px' }}>
           <h3>תובנות:</h3>
@@ -232,7 +231,6 @@ function App() {
 
   return (
     <div style={containerStyle} dir="rtl">
-      {/* GLOBAL HEADER */}
       <div style={statusBarStyle}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <div style={avatarStyle}>{user.displayName?.charAt(0)}</div>
@@ -256,7 +254,7 @@ function App() {
             <input 
               value={newReportTitle} 
               onChange={(e) => setNewReportTitle(e.target.value)} 
-              placeholder="שם חנות / כותרת הסיור החדש..." 
+              placeholder="שם חנות / כותרת סיור..." 
               style={inputStyle}
             />
             <button onClick={startNewReport} style={startBtnStyle}>
@@ -303,11 +301,10 @@ function App() {
 
           <div style={summaryPreviewStyle}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-              <span style={{ fontWeight: 'bold', color: '#34495e' }}>הערות הסיור ({activeReport.notes.length})</span>
+              <span style={{ fontWeight: 'bold', color: '#34495e' }}>הערות ({activeReport.notes.length})</span>
               <button onClick={() => setView('report')} style={genBtnStyle}><FileText size={14}/> דוח מלא</button>
             </div>
             
-            {/* Notes List with Edit capability */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {activeReport.notes.map((n, i) => (
                 <div key={i} style={editableNoteStyle}>
@@ -336,7 +333,6 @@ function App() {
               ))}
             </div>
             
-            {/* Small image thumbnails */}
             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '20px' }}>
               {activeReport.images.map((url, i) => (
                 <img key={i} src={url} style={{ width: '50px', height: '50px', borderRadius: '8px', objectFit: 'cover' }} />
@@ -350,7 +346,7 @@ function App() {
   );
 }
 
-// STYLES
+// STYLES (Kept identical for stability)
 const loginContainerStyle = { display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#f0f2f5' };
 const loginCardStyle = { padding: '40px', backgroundColor: 'white', borderRadius: '25px', textAlign: 'center', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' };
 const loginBtnStyle = { display: 'flex', alignItems: 'center', gap: '10px', padding: '15px 30px', backgroundColor: '#4285F4', color: 'white', border: 'none', borderRadius: '12px', cursor: 'pointer', fontWeight: 'bold' };
@@ -359,27 +355,19 @@ const statusBarStyle = { display: 'flex', justifyContent: 'space-between', align
 const avatarStyle = { width: '35px', height: '35px', backgroundColor: '#3498db', color: 'white', borderRadius: '50%', display: 'flex', justifyContent: 'center', alignItems: 'center', fontWeight: 'bold' };
 const logoutBtnStyle = { background: 'none', border: 'none', color: '#95a5a6', cursor: 'pointer' };
 const installBtnStyle = { display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 10px', backgroundColor: '#2ecc71', color: 'white', border: 'none', borderRadius: '8px', fontSize: '12px' };
-
-// Dashboard Styles
 const newReportContainerStyle = { display: 'flex', flexDirection: 'column', gap: '10px', backgroundColor: 'white', padding: '20px', borderRadius: '15px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' };
 const inputStyle = { padding: '15px', borderRadius: '10px', border: '1px solid #ddd', fontSize: '16px', outline: 'none' };
 const startBtnStyle = { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '15px', backgroundColor: '#2c3e50', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' };
 const reportCardStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px', backgroundColor: 'white', borderRadius: '15px', marginBottom: '15px', cursor: 'pointer', boxShadow: '0 2px 5px rgba(0,0,0,0.02)', border: '1px solid #eee' };
-
-// Tour Styles
 const actionGridStyle = { display: 'flex', gap: '15px', marginBottom: '30px' };
 const btnStyle = { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', padding: '20px', backgroundColor: '#2c3e50', color: 'white', border: 'none', borderRadius: '20px', flex: 1, fontWeight: 'bold' };
 const summaryPreviewStyle = { padding: '20px', backgroundColor: 'white', borderRadius: '20px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)' };
 const genBtnStyle = { display: 'flex', alignItems: 'center', gap: '5px', padding: '8px 15px', backgroundColor: '#3498db', color: 'white', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: 'bold' };
 const backBtnStyle = { border: 'none', background: 'none', color: '#3498db', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 'bold' };
-
-// Note Edit Styles
 const editableNoteStyle = { padding: '12px', backgroundColor: '#f4f6f7', borderRadius: '10px', borderRight: '4px solid #3498db' };
 const editIconBtnStyle = { background: 'none', border: 'none', color: '#95a5a6', cursor: 'pointer', padding: '5px' };
 const editInputStyle = { flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #bdc3c7', fontFamily: 'Arial', resize: 'vertical' };
 const saveEditBtnStyle = { backgroundColor: '#2ecc71', color: 'white', border: 'none', borderRadius: '8px', padding: '0 15px', cursor: 'pointer' };
-
-// Report Styles
 const reportContainerStyle = { padding: '20px', maxWidth: '800px', margin: '0 auto', backgroundColor: 'white', minHeight: '100vh' };
 const reportHeaderStyle = { textAlign: 'center', borderBottom: '2px solid #eee', paddingBottom: '20px' };
 const noteItemStyle = { padding: '12px', background: '#f9f9f9', borderRight: '4px solid #3498db', marginBottom: '10px', fontSize: '15px' };
