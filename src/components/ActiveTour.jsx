@@ -8,7 +8,8 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
   const [isUploading, setIsUploading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [editingNote, setEditingNote] = useState(null);
-  const [draggedItem, setDraggedItem] = useState(null);
+  
+  const draggedItemRef = useRef(null); 
   const [dragOverGroupId, setDragOverGroupId] = useState(null);
   
   const [isAddingText, setIsAddingText] = useState(false);
@@ -38,6 +39,7 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     if (isOnline) await updateDoc(doc(db, "reports", activeReport.id), { groups: updatedGroups, updatedAt: updatedReport.updatedAt });
   };
 
+  // === Voice & Text Logic ===
   const startRecording = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) return alert("הדפדפן שלך לא תומך בהקלטה. השתמש בטקסט חופשי.");
@@ -67,20 +69,40 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     if (isOnline) { try { await updateDoc(doc(db, "reports", activeReport.id), { ungroupedNotes: updatedUngrouped, updatedAt: updatedReport.updatedAt }); } catch(e) {} }
   };
 
-  // === Drag & Drop Logic ===
+  // === Drag & Drop Logic (Optimized for Mobile Performance) ===
   const handleDragStart = (e, sourceGroupId, type, index) => {
-    setDraggedItem({ sourceGroupId, type, index });
-    if(e.dataTransfer) { e.dataTransfer.setData('text/plain', ''); e.dataTransfer.effectAllowed = 'move'; }
+    draggedItemRef.current = { sourceGroupId, type, index };
+    if(e.dataTransfer) { 
+      e.dataTransfer.setData('text/plain', type); 
+      e.dataTransfer.effectAllowed = 'move'; 
+    }
   };
-  const handleDragOver = (e, targetGroupId) => { e.preventDefault(); if (dragOverGroupId !== targetGroupId) setDragOverGroupId(targetGroupId); };
-  const handleDragLeave = () => setDragOverGroupId(null);
+
+  const handleDragEnd = () => {
+    draggedItemRef.current = null;
+    setDragOverGroupId(null);
+  };
+
+  // הפתרון: שימוש ב-DragEnter במקום Over כדי להדליק את האור פעם אחת בלי להעמיס על המעבד
+  const handleDragEnter = (e, targetGroupId) => {
+    e.preventDefault();
+    if (dragOverGroupId !== targetGroupId) {
+      setDragOverGroupId(targetGroupId);
+    }
+  };
+
+  const handleDragOver = (e) => { 
+    e.preventDefault(); // חובה כדי לאפשר לדפדפן לקבל את ההנחה
+  };
   
   const handleDrop = async (e, targetGroupId) => {
     e.preventDefault(); 
     setDragOverGroupId(null);
-    if (!draggedItem) return;
     
-    const { sourceGroupId, type, index } = draggedItem;
+    const item = draggedItemRef.current;
+    if (!item) return;
+    
+    const { sourceGroupId, type, index } = item;
     if (sourceGroupId === targetGroupId) return;
 
     let newGroups = JSON.parse(JSON.stringify(activeReport.groups || []));
@@ -88,6 +110,7 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     let newUngroupedImages = [...(activeReport.ungroupedImages || [])];
     let itemContent = null;
 
+    // Remove from Source
     if (sourceGroupId === 'ungrouped') {
       if (type === 'note') { itemContent = newUngroupedNotes[index]; newUngroupedNotes.splice(index, 1); } 
       else { itemContent = newUngroupedImages[index]; newUngroupedImages.splice(index, 1); }
@@ -101,6 +124,7 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
 
     if (!itemContent) return;
 
+    // Add to Target
     if (targetGroupId === 'ungrouped') {
       if (type === 'note') newUngroupedNotes.push(itemContent);
       else newUngroupedImages.push(itemContent);
@@ -116,7 +140,7 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
 
     const updatedReport = { ...activeReport, groups: newGroups, ungroupedNotes: newUngroupedNotes, ungroupedImages: newUngroupedImages, updatedAt: new Date().toISOString() };
     setActiveReport(updatedReport);
-    setDraggedItem(null);
+    draggedItemRef.current = null;
 
     if (isOnline) await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, ungroupedNotes: newUngroupedNotes, ungroupedImages: newUngroupedImages, updatedAt: updatedReport.updatedAt });
   };
@@ -149,7 +173,13 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
   const renderNote = (noteText, index, groupId) => {
     const isEditing = editingNote?.groupId === groupId && editingNote?.index === index;
     return (
-      <div key={`note_${index}`} draggable onDragStart={(e) => handleDragStart(e, groupId, 'note', index)} style={draggableNoteStyle}>
+      <div 
+        key={`note_${groupId}_${index}`} 
+        draggable 
+        onDragStart={(e) => handleDragStart(e, groupId, 'note', index)} 
+        onDragEnd={handleDragEnd}
+        style={draggableNoteStyle}
+      >
         <GripVertical size={16} color="#bdc3c7" style={{cursor: 'grab'}} />
         {isEditing ? (
           <div style={{ display: 'flex', gap: '10px', width: '100%', alignItems: 'center' }}>
@@ -213,7 +243,12 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
       </div>
 
       {/* UNGROUPED ZONE */}
-      <div onDragOver={(e) => handleDragOver(e, 'ungrouped')} onDragLeave={handleDragLeave} onDrop={(e) => handleDrop(e, 'ungrouped')} style={getDropZoneStyle(dragOverGroupId === 'ungrouped')}>
+      <div 
+        onDragEnter={(e) => handleDragEnter(e, 'ungrouped')} 
+        onDragOver={handleDragOver} 
+        onDrop={(e) => handleDrop(e, 'ungrouped')} 
+        style={getDropZoneStyle(dragOverGroupId === 'ungrouped')}
+      >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
           <h3 style={{fontSize: '15px', color: '#34495e', margin: 0}}>אזור חופשי - גרור לפה</h3>
           <button onClick={() => setIsAddingText(true)} style={addTextBtnStyle}><Edit2 size={14} /> טקסט חופשי</button>
@@ -226,11 +261,15 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
           </div>
         )}
 
-        {/* שינוי קריטי: עטיפת התמונות ב-DIV עם draggable, וניטרול אירועי המגע של התמונה עצמה 
-        */}
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '15px' }}>
           {(activeReport.ungroupedImages || []).map((imgUrl, i) => (
-            <div key={`u_img_${i}`} draggable onDragStart={(e) => handleDragStart(e, 'ungrouped', 'image', i)} style={draggableImgWrapperStyle}>
+            <div 
+              key={`u_img_${i}`} 
+              draggable 
+              onDragStart={(e) => handleDragStart(e, 'ungrouped', 'image', i)} 
+              onDragEnd={handleDragEnd}
+              style={draggableImgWrapperStyle}
+            >
               <img src={imgUrl} style={draggableImgStyle} alt="ungrouped" />
             </div>
           ))}
@@ -244,12 +283,18 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
 
       {/* IMAGE GROUPS ZONE */}
       {(activeReport.groups || []).map((group) => (
-        <div key={group.id} onDragOver={(e) => handleDragOver(e, group.id)} onDragLeave={handleDragLeave} onDrop={(e) => handleDrop(e, group.id)} style={getGroupZoneStyle(dragOverGroupId === group.id)}>
+        <div 
+          key={group.id} 
+          onDragEnter={(e) => handleDragEnter(e, group.id)} 
+          onDragOver={handleDragOver} 
+          onDrop={(e) => handleDrop(e, group.id)} 
+          style={getGroupZoneStyle(dragOverGroupId === group.id)}
+        >
           
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #eee', paddingBottom: '10px', marginBottom: '10px' }}>
             {editingGroupTitle === group.id ? (
               <div style={{ display: 'flex', gap: '10px', width: '100%', alignItems: 'center' }}>
-                <input value={editGroupTitleText} onChange={e => setEditGroupTitleText(e.target.value)} style={editInputStyle} placeholder="שם הקבוצה (למשל: תצוגת קופה)..." />
+                <input value={editGroupTitleText} onChange={e => setEditGroupTitleText(e.target.value)} style={editInputStyle} placeholder="שם הקבוצה..." />
                 <button onClick={() => saveGroupTitle(group.id)} style={saveEditBtnStyle}><Check size={18} /></button>
               </div>
             ) : (
@@ -260,11 +305,15 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
             )}
           </div>
 
-          {/* שינוי קריטי 2: גם כאן עטפנו את התמונות בקבוצות
-          */}
           <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', minHeight: '20px' }}>
             {group.images.map((imgUrl, i) => (
-              <div key={`g_img_${group.id}_${i}`} draggable onDragStart={(e) => handleDragStart(e, group.id, 'image', i)} style={draggableImgWrapperStyle}>
+              <div 
+                key={`g_img_${group.id}_${i}`} 
+                draggable 
+                onDragStart={(e) => handleDragStart(e, group.id, 'image', i)} 
+                onDragEnd={handleDragEnd}
+                style={draggableImgWrapperStyle}
+              >
                 <img src={imgUrl} style={draggableImgStyle} alt="group item" />
               </div>
             ))}
@@ -292,11 +341,10 @@ const genBtnStyle = { display: 'flex', alignItems: 'center', gap: '5px', padding
 const addGroupBtnStyle = { display: 'flex', alignItems: 'center', gap: '5px', padding: '8px 15px', backgroundColor: '#9b59b6', color: 'white', border: 'none', borderRadius: '10px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer' };
 const backBtnStyle = { border: 'none', background: 'none', color: '#3498db', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 'bold', fontSize: '16px' };
 
-const draggableNoteStyle = { display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '15px', backgroundColor: '#fff', borderRadius: '12px', borderRight: '5px solid #3498db', marginBottom: '10px', boxShadow: '0 2px 6px rgba(0,0,0,0.08)' };
+const draggableNoteStyle = { display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '15px', backgroundColor: '#fff', borderRadius: '12px', borderRight: '5px solid #3498db', marginBottom: '10px', boxShadow: '0 2px 6px rgba(0,0,0,0.08)', cursor: 'grab', touchAction: 'none' };
 
-// העיצובים החדשים שפותרים את הבעיה:
 const draggableImgWrapperStyle = { cursor: 'grab', display: 'inline-block', borderRadius: '8px', overflow: 'hidden', border: '2px solid transparent', boxShadow: '0 2px 5px rgba(0,0,0,0.1)', touchAction: 'none' };
-const draggableImgStyle = { width: '80px', height: '80px', objectFit: 'cover', display: 'block', pointerEvents: 'none' }; // pointerEvents: 'none' הוא מה שמנטרל את ההפרעה של הדפדפן
+const draggableImgStyle = { width: '80px', height: '80px', objectFit: 'cover', display: 'block', pointerEvents: 'none' };
 
 const editIconBtnStyle = { background: 'none', border: 'none', color: '#95a5a6', cursor: 'pointer', padding: '5px' };
 const editInputStyle = { flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #bdc3c7', fontFamily: 'Arial' };
