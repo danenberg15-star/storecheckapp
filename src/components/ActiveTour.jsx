@@ -132,7 +132,7 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     if (isOnline) { try { await updateDoc(doc(db, "reports", activeReport.id), { ungroupedNotes: updatedUngrouped, updatedAt: updatedReport.updatedAt }); } catch(e) {} }
   };
 
-  // === Drag & Drop Logic (Handles Both Images and Notes) ===
+  // === Drag & Drop Logic (FIXED DEEP COPY) ===
   const handleDragStart = (e, sourceGroupId, type, index) => {
     setDraggedItem({ sourceGroupId, type, index });
     if(e.dataTransfer) { e.dataTransfer.setData('text/plain', ''); e.dataTransfer.effectAllowed = 'move'; }
@@ -141,12 +141,15 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
   const handleDragLeave = () => setDragOverGroupId(null);
   
   const handleDrop = async (e, targetGroupId) => {
-    e.preventDefault(); setDragOverGroupId(null);
+    e.preventDefault(); 
+    setDragOverGroupId(null);
     if (!draggedItem) return;
+    
     const { sourceGroupId, type, index } = draggedItem;
     if (sourceGroupId === targetGroupId) return;
 
-    let newGroups = [...(activeReport.groups || [])];
+    // Deep Copy לניתוק הזיכרון ומניעת קפיאות במסך
+    let newGroups = JSON.parse(JSON.stringify(activeReport.groups || []));
     let newUngroupedNotes = [...(activeReport.ungroupedNotes || [])];
     let newUngroupedImages = [...(activeReport.ungroupedImages || [])];
     let itemContent = null;
@@ -157,9 +160,13 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
       else { itemContent = newUngroupedImages[index]; newUngroupedImages.splice(index, 1); }
     } else {
       const gIndex = newGroups.findIndex(g => g.id === sourceGroupId);
-      if (type === 'note') { itemContent = newGroups[gIndex].notes[index]; newGroups[gIndex].notes.splice(index, 1); } 
-      else { itemContent = newGroups[gIndex].images[index]; newGroups[gIndex].images.splice(index, 1); }
+      if (gIndex > -1) {
+        if (type === 'note') { itemContent = newGroups[gIndex].notes[index]; newGroups[gIndex].notes.splice(index, 1); } 
+        else { itemContent = newGroups[gIndex].images[index]; newGroups[gIndex].images.splice(index, 1); }
+      }
     }
+
+    if (!itemContent) return; // גיבוי למקרה שהפריט לא נמצא
 
     // Add to Target
     if (targetGroupId === 'ungrouped') {
@@ -167,11 +174,13 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
       else newUngroupedImages.push(itemContent);
     } else {
       const gIndex = newGroups.findIndex(g => g.id === targetGroupId);
-      if (type === 'note') newGroups[gIndex].notes.push(itemContent);
-      else newGroups[gIndex].images.push(itemContent);
+      if (gIndex > -1) {
+        if (type === 'note') newGroups[gIndex].notes.push(itemContent);
+        else newGroups[gIndex].images.push(itemContent);
+      }
     }
 
-    // ניקוי אוטומטי של קבוצות ריקות לחלוטין (ללא כותרת, ללא תמונה וללא טקסט)
+    // ניקוי אוטומטי של קבוצות ריקות לחלוטין
     newGroups = newGroups.filter(g => g.images.length > 0 || g.notes.length > 0 || g.title.trim() !== '');
 
     const updatedReport = { ...activeReport, groups: newGroups, ungroupedNotes: newUngroupedNotes, ungroupedImages: newUngroupedImages, updatedAt: new Date().toISOString() };
@@ -182,22 +191,25 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
   };
 
   const saveNoteEdit = async () => {
-    let newGroups = [...(activeReport.groups || [])];
+    let newGroups = JSON.parse(JSON.stringify(activeReport.groups || []));
     let newUngrouped = [...(activeReport.ungroupedNotes || [])];
+    
     if (editingNote.groupId === 'ungrouped') newUngrouped[editingNote.index] = editingNote.text;
     else {
       const gIndex = newGroups.findIndex(g => g.id === editingNote.groupId);
-      newGroups[gIndex].notes[editingNote.index] = editingNote.text;
+      if (gIndex > -1) newGroups[gIndex].notes[editingNote.index] = editingNote.text;
     }
+    
     const updatedReport = { ...activeReport, groups: newGroups, ungroupedNotes: newUngrouped, updatedAt: new Date().toISOString() };
     setActiveReport(updatedReport); setEditingNote(null);
     if (isOnline) await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, ungroupedNotes: newUngrouped, updatedAt: updatedReport.updatedAt });
   };
 
   const saveGroupTitle = async (groupId) => {
-    let newGroups = [...(activeReport.groups || [])];
+    let newGroups = JSON.parse(JSON.stringify(activeReport.groups || []));
     const gIndex = newGroups.findIndex(g => g.id === groupId);
-    newGroups[gIndex].title = editGroupTitleText;
+    if (gIndex > -1) newGroups[gIndex].title = editGroupTitleText;
+    
     const updatedReport = { ...activeReport, groups: newGroups, updatedAt: new Date().toISOString() };
     setActiveReport(updatedReport); setEditingGroupTitle(null);
     if (isOnline) await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, updatedAt: updatedReport.updatedAt });
@@ -206,7 +218,7 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
   const renderNote = (noteText, index, groupId) => {
     const isEditing = editingNote?.groupId === groupId && editingNote?.index === index;
     return (
-      <div key={index} draggable onDragStart={(e) => handleDragStart(e, groupId, 'note', index)} style={draggableNoteStyle}>
+      <div key={`note_${index}`} draggable onDragStart={(e) => handleDragStart(e, groupId, 'note', index)} style={draggableNoteStyle}>
         <GripVertical size={16} color="#bdc3c7" style={{cursor: 'grab'}} />
         {isEditing ? (
           <div style={{ display: 'flex', gap: '10px', width: '100%', alignItems: 'center' }}>
@@ -273,7 +285,7 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
       {/* UNGROUPED ZONE */}
       <div onDragOver={(e) => handleDragOver(e, 'ungrouped')} onDragLeave={handleDragLeave} onDrop={(e) => handleDrop(e, 'ungrouped')} style={getDropZoneStyle(dragOverGroupId === 'ungrouped')}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-          <h3 style={{fontSize: '15px', color: '#34495e', margin: 0}}>אזור חופשי - תמונות והערות למחזור</h3>
+          <h3 style={{fontSize: '15px', color: '#34495e', margin: 0}}>אזור חופשי - גרור לפה</h3>
           <button onClick={() => setIsAddingText(true)} style={addTextBtnStyle}><Edit2 size={14} /> טקסט חופשי</button>
         </div>
 
@@ -287,7 +299,7 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
         {/* Ungrouped Images */}
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '15px' }}>
           {(activeReport.ungroupedImages || []).map((imgUrl, i) => (
-            <img key={i} src={imgUrl} draggable onDragStart={(e) => handleDragStart(e, 'ungrouped', 'image', i)} style={draggableImgStyle} alt="ungrouped" />
+            <img key={`u_img_${i}`} src={imgUrl} draggable onDragStart={(e) => handleDragStart(e, 'ungrouped', 'image', i)} style={draggableImgStyle} alt="ungrouped" />
           ))}
         </div>
 
@@ -320,7 +332,7 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
           {/* GROUP IMAGES */}
           <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', minHeight: '20px' }}>
             {group.images.map((imgUrl, i) => (
-              <img key={i} src={imgUrl} draggable onDragStart={(e) => handleDragStart(e, group.id, 'image', i)} style={draggableImgStyle} alt="group item" />
+              <img key={`g_img_${group.id}_${i}`} src={imgUrl} draggable onDragStart={(e) => handleDragStart(e, group.id, 'image', i)} style={draggableImgStyle} alt="group item" />
             ))}
           </div>
 
