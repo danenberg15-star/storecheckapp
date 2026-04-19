@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { Camera, Mic, FileText, Loader, Square, Edit2, Check, ArrowRight, GripVertical } from 'lucide-react';
+import { Camera, Mic, FileText, Loader, Square, Edit2, Check, ArrowRight, GripVertical, Plus } from 'lucide-react';
 import { storage, db } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { doc, updateDoc } from 'firebase/firestore';
@@ -10,6 +10,10 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
   const [editingNote, setEditingNote] = useState(null);
   const [draggedItem, setDraggedItem] = useState(null);
   const [dragOverGroupId, setDragOverGroupId] = useState(null);
+  
+  // States for Manual Text Entry
+  const [isAddingText, setIsAddingText] = useState(false);
+  const [newTextNote, setNewTextNote] = useState('');
   
   const fileInputRef = useRef(null);
 
@@ -36,10 +40,31 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
 
   const startRecording = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) return alert("Speech recognition not supported.");
+    if (!SpeechRecognition) {
+      alert("הדפדפן שלך לא תומך בהקלטה קולית. השתמש בהזנת טקסט ידנית.");
+      return;
+    }
+    
     const recognition = new SpeechRecognition();
     recognition.lang = 'he-IL';
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    
     recognition.onstart = () => setIsRecording(true);
+    
+    // זיהוי שגיאות וטיפול בהן
+    recognition.onerror = (event) => {
+      console.error("Speech error:", event.error);
+      setIsRecording(false);
+      if (event.error === 'not-allowed') {
+        alert("אין הרשאה למיקרופון! אנא כנס להגדרות הדפדפן בטלפון ואפשר גישה למיקרופון לאתר זה.");
+      } else if (event.error === 'no-speech') {
+        // התעלמות אם המשתמש פשוט לא דיבר
+      } else {
+        alert("שגיאה בהקלטה הקולית: " + event.error);
+      }
+    };
+
     recognition.onresult = async (event) => {
       const text = event.results[0][0].transcript;
       const updatedUngrouped = [...(activeReport.ungroupedNotes || []), text];
@@ -51,8 +76,35 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
         catch(e) { console.error(e); }
       }
     };
+    
     recognition.onend = () => setIsRecording(false);
-    recognition.start();
+    
+    try {
+      recognition.start();
+    } catch(e) {
+      console.error(e);
+      setIsRecording(false);
+    }
+  };
+
+  // הוספת טקסט ידני
+  const handleAddTextNote = async () => {
+    if (!newTextNote.trim()) {
+      setIsAddingText(false);
+      return;
+    }
+    
+    const updatedUngrouped = [...(activeReport.ungroupedNotes || []), newTextNote.trim()];
+    const updatedReport = { ...activeReport, ungroupedNotes: updatedUngrouped, updatedAt: new Date().toISOString() };
+    
+    setActiveReport(updatedReport);
+    setNewTextNote('');
+    setIsAddingText(false);
+
+    if (isOnline) {
+      try { await updateDoc(doc(db, "reports", activeReport.id), { ungroupedNotes: updatedUngrouped, updatedAt: updatedReport.updatedAt }); } 
+      catch(e) { console.error(e); }
+    }
   };
 
   // === Drag & Drop & Edit Logic ===
@@ -172,11 +224,32 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
         <button onClick={() => setView('report')} style={genBtnStyle}><FileText size={14}/> דוח מלא</button>
       </div>
 
-      {/* UNGROUPED NOTES ZONE */}
+      {/* UNGROUPED NOTES ZONE WITH TEXT ENTRY */}
       <div onDragOver={(e) => handleDragOver(e, 'ungrouped')} onDragLeave={handleDragLeave} onDrop={(e) => handleDrop(e, 'ungrouped')} style={getDropZoneStyle(dragOverGroupId === 'ungrouped')}>
-        <h3 style={{fontSize: '15px', color: '#34495e', margin: '0 0 15px 0'}}>הערות כלליות - גרור לכאן</h3>
-        {(activeReport.ungroupedNotes || []).length === 0 ? 
-          <p style={{color: '#bdc3c7', fontSize: '14px', fontStyle: 'italic'}}>אין הערות - הקלט עכשיו</p> : 
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+          <h3 style={{fontSize: '15px', color: '#34495e', margin: 0}}>הערות כלליות - גרור לכאן</h3>
+          <button onClick={() => setIsAddingText(true)} style={addTextBtnStyle}>
+            <Edit2 size={14} /> טקסט חופשי
+          </button>
+        </div>
+
+        {/* Input box for new text note */}
+        {isAddingText && (
+          <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
+            <input 
+              type="text" 
+              value={newTextNote} 
+              onChange={(e) => setNewTextNote(e.target.value)} 
+              placeholder="הקלד הערה כאן..." 
+              style={editInputStyle} 
+              autoFocus
+            />
+            <button onClick={handleAddTextNote} style={saveEditBtnStyle}><Check size={20} /></button>
+          </div>
+        )}
+
+        {(activeReport.ungroupedNotes || []).length === 0 && !isAddingText ? 
+          <p style={{color: '#bdc3c7', fontSize: '14px', fontStyle: 'italic'}}>אין הערות - הקלט או הקלד עכשיו</p> : 
           (activeReport.ungroupedNotes || []).map((n, i) => renderNote(n, i, 'ungrouped'))
         }
       </div>
@@ -214,3 +287,4 @@ const draggableNoteStyle = { display: 'flex', alignItems: 'flex-start', gap: '10
 const editIconBtnStyle = { background: 'none', border: 'none', color: '#95a5a6', cursor: 'pointer', padding: '5px' };
 const editInputStyle = { flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #bdc3c7', fontFamily: 'Arial' };
 const saveEditBtnStyle = { backgroundColor: '#2ecc71', color: 'white', border: 'none', borderRadius: '8px', padding: '0 15px', cursor: 'pointer' };
+const addTextBtnStyle = { display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 12px', backgroundColor: '#fff', color: '#2c3e50', border: '1px solid #bdc3c7', borderRadius: '8px', fontSize: '13px', cursor: 'pointer', fontWeight: 'bold', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' };
