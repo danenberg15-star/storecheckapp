@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { Camera, Mic, FileText, Loader, Square, Edit2, Check, ArrowRight, GripVertical, Plus } from 'lucide-react';
+import { Camera, Mic, FileText, Loader, Square, Edit2, Check, ArrowRight, GripVertical, Plus, Trash2 } from 'lucide-react';
 import { db } from '../firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import AnnotationModal from './AnnotationModal';
@@ -39,6 +39,14 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     if (isOnline) await updateDoc(doc(db, "reports", activeReport.id), { groups: updatedGroups, updatedAt: updatedReport.updatedAt });
   };
 
+  // מחיקת קבוצה ריקה
+  const deleteEmptyGroup = async (groupId) => {
+    const newGroups = (activeReport.groups || []).filter(g => g.id !== groupId);
+    const updatedReport = { ...activeReport, groups: newGroups, updatedAt: new Date().toISOString() };
+    setActiveReport(updatedReport);
+    if (isOnline) await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, updatedAt: updatedReport.updatedAt });
+  };
+
   // === Voice & Text Logic ===
   const startRecording = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -69,7 +77,7 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     if (isOnline) { try { await updateDoc(doc(db, "reports", activeReport.id), { ungroupedNotes: updatedUngrouped, updatedAt: updatedReport.updatedAt }); } catch(e) {} }
   };
 
-  // === Drag & Drop Logic (Optimized for Mobile Performance) ===
+  // === Drag & Drop Logic ===
   const handleDragStart = (e, sourceGroupId, type, index) => {
     draggedItemRef.current = { sourceGroupId, type, index };
     if(e.dataTransfer) { 
@@ -83,7 +91,6 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     setDragOverGroupId(null);
   };
 
-  // הפתרון: שימוש ב-DragEnter במקום Over כדי להדליק את האור פעם אחת בלי להעמיס על המעבד
   const handleDragEnter = (e, targetGroupId) => {
     e.preventDefault();
     if (dragOverGroupId !== targetGroupId) {
@@ -92,7 +99,7 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
   };
 
   const handleDragOver = (e) => { 
-    e.preventDefault(); // חובה כדי לאפשר לדפדפן לקבל את ההנחה
+    e.preventDefault(); 
   };
   
   const handleDrop = async (e, targetGroupId) => {
@@ -110,7 +117,6 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     let newUngroupedImages = [...(activeReport.ungroupedImages || [])];
     let itemContent = null;
 
-    // Remove from Source
     if (sourceGroupId === 'ungrouped') {
       if (type === 'note') { itemContent = newUngroupedNotes[index]; newUngroupedNotes.splice(index, 1); } 
       else { itemContent = newUngroupedImages[index]; newUngroupedImages.splice(index, 1); }
@@ -124,7 +130,6 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
 
     if (!itemContent) return;
 
-    // Add to Target
     if (targetGroupId === 'ungrouped') {
       if (type === 'note') newUngroupedNotes.push(itemContent);
       else newUngroupedImages.push(itemContent);
@@ -301,6 +306,13 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <h3 style={{ margin: 0, color: '#2c3e50', fontSize: '16px' }}>{group.title || 'קבוצה ללא שם'}</h3>
                 <button onClick={() => { setEditingGroupTitle(group.id); setEditGroupTitleText(group.title || ''); }} style={editIconBtnStyle}><Edit2 size={14} /></button>
+                
+                {/* כפתור מחיקה לקבוצות ריקות בלבד */}
+                {group.images.length === 0 && group.notes.length === 0 && (
+                  <button onClick={() => deleteEmptyGroup(group.id)} style={editIconBtnStyle} title="מחק קבוצה ריקה">
+                    <Trash2 size={16} color="#e74c3c" />
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -342,7 +354,6 @@ const addGroupBtnStyle = { display: 'flex', alignItems: 'center', gap: '5px', pa
 const backBtnStyle = { border: 'none', background: 'none', color: '#3498db', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 'bold', fontSize: '16px' };
 
 const draggableNoteStyle = { display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '15px', backgroundColor: '#fff', borderRadius: '12px', borderRight: '5px solid #3498db', marginBottom: '10px', boxShadow: '0 2px 6px rgba(0,0,0,0.08)', cursor: 'grab', touchAction: 'none' };
-
 const draggableImgWrapperStyle = { cursor: 'grab', display: 'inline-block', borderRadius: '8px', overflow: 'hidden', border: '2px solid transparent', boxShadow: '0 2px 5px rgba(0,0,0,0.1)', touchAction: 'none' };
 const draggableImgStyle = { width: '80px', height: '80px', objectFit: 'cover', display: 'block', pointerEvents: 'none' };
 
