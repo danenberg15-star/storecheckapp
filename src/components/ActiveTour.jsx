@@ -2,8 +2,6 @@ import { useState, useRef } from 'react';
 import { Camera, Mic, FileText, Loader, Square, Edit2, Check, ArrowRight, GripVertical, Plus } from 'lucide-react';
 import { db } from '../firebase';
 import { doc, updateDoc } from 'firebase/firestore';
-
-// הנה הייבוא של הרכיב החדש שיצרנו!
 import AnnotationModal from './AnnotationModal';
 
 export default function ActiveTour({ user, isOnline, activeReport, setActiveReport, setView, closeTour }) {
@@ -19,13 +17,11 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
   const [editingGroupTitle, setEditingGroupTitle] = useState(null);
   const [editGroupTitleText, setEditGroupTitleText] = useState('');
 
-  // States for Annotation Modal
   const [isAnnotating, setIsAnnotating] = useState(false);
   const [pendingPhoto, setPendingPhoto] = useState(null);
   
   const fileInputRef = useRef(null);
 
-  // תופסים את התמונה ומעבירים למודל הציור
   const handleFileSelect = (event) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -42,7 +38,6 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     if (isOnline) await updateDoc(doc(db, "reports", activeReport.id), { groups: updatedGroups, updatedAt: updatedReport.updatedAt });
   };
 
-  // === Voice & Text Logic ===
   const startRecording = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) return alert("הדפדפן שלך לא תומך בהקלטה. השתמש בטקסט חופשי.");
@@ -72,7 +67,7 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     if (isOnline) { try { await updateDoc(doc(db, "reports", activeReport.id), { ungroupedNotes: updatedUngrouped, updatedAt: updatedReport.updatedAt }); } catch(e) {} }
   };
 
-  // === Drag & Drop Logic (Deep Copy) ===
+  // === Drag & Drop Logic ===
   const handleDragStart = (e, sourceGroupId, type, index) => {
     setDraggedItem({ sourceGroupId, type, index });
     if(e.dataTransfer) { e.dataTransfer.setData('text/plain', ''); e.dataTransfer.effectAllowed = 'move'; }
@@ -175,8 +170,6 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
   const getGroupZoneStyle = (isHovered) => ({ display: 'flex', flexDirection: 'column', gap: '15px', padding: '20px', backgroundColor: isHovered ? '#ebf5fb' : 'white', borderRadius: '15px', marginBottom: '25px', boxShadow: isHovered ? '0 8px 25px rgba(52, 152, 219, 0.2)' : '0 2px 8px rgba(0,0,0,0.05)', border: isHovered ? '3px dashed #3498db' : '3px solid transparent', transition: 'all 0.2s ease', minHeight: '180px' });
 
   // === RENDER ===
-
-  // קורא לרכיב הציור החדש
   if (isAnnotating) {
     return (
       <AnnotationModal 
@@ -233,9 +226,13 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
           </div>
         )}
 
+        {/* שינוי קריטי: עטיפת התמונות ב-DIV עם draggable, וניטרול אירועי המגע של התמונה עצמה 
+        */}
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '15px' }}>
           {(activeReport.ungroupedImages || []).map((imgUrl, i) => (
-            <img key={`u_img_${i}`} src={imgUrl} draggable onDragStart={(e) => handleDragStart(e, 'ungrouped', 'image', i)} style={draggableImgStyle} alt="ungrouped" />
+            <div key={`u_img_${i}`} draggable onDragStart={(e) => handleDragStart(e, 'ungrouped', 'image', i)} style={draggableImgWrapperStyle}>
+              <img src={imgUrl} style={draggableImgStyle} alt="ungrouped" />
+            </div>
           ))}
         </div>
 
@@ -263,9 +260,13 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
             )}
           </div>
 
+          {/* שינוי קריטי 2: גם כאן עטפנו את התמונות בקבוצות
+          */}
           <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', minHeight: '20px' }}>
             {group.images.map((imgUrl, i) => (
-              <img key={`g_img_${group.id}_${i}`} src={imgUrl} draggable onDragStart={(e) => handleDragStart(e, group.id, 'image', i)} style={draggableImgStyle} alt="group item" />
+              <div key={`g_img_${group.id}_${i}`} draggable onDragStart={(e) => handleDragStart(e, group.id, 'image', i)} style={draggableImgWrapperStyle}>
+                <img src={imgUrl} style={draggableImgStyle} alt="group item" />
+              </div>
             ))}
           </div>
 
@@ -290,8 +291,13 @@ const btnStyle = { display: 'flex', flexDirection: 'column', alignItems: 'center
 const genBtnStyle = { display: 'flex', alignItems: 'center', gap: '5px', padding: '8px 15px', backgroundColor: '#3498db', color: 'white', border: 'none', borderRadius: '10px', fontSize: '13px', fontWeight: 'bold' };
 const addGroupBtnStyle = { display: 'flex', alignItems: 'center', gap: '5px', padding: '8px 15px', backgroundColor: '#9b59b6', color: 'white', border: 'none', borderRadius: '10px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer' };
 const backBtnStyle = { border: 'none', background: 'none', color: '#3498db', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 'bold', fontSize: '16px' };
+
 const draggableNoteStyle = { display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '15px', backgroundColor: '#fff', borderRadius: '12px', borderRight: '5px solid #3498db', marginBottom: '10px', boxShadow: '0 2px 6px rgba(0,0,0,0.08)' };
-const draggableImgStyle = { width: '80px', height: '80px', objectFit: 'cover', borderRadius: '8px', cursor: 'grab', border: '2px solid transparent', boxShadow: '0 2px 5px rgba(0,0,0,0.1)' };
+
+// העיצובים החדשים שפותרים את הבעיה:
+const draggableImgWrapperStyle = { cursor: 'grab', display: 'inline-block', borderRadius: '8px', overflow: 'hidden', border: '2px solid transparent', boxShadow: '0 2px 5px rgba(0,0,0,0.1)', touchAction: 'none' };
+const draggableImgStyle = { width: '80px', height: '80px', objectFit: 'cover', display: 'block', pointerEvents: 'none' }; // pointerEvents: 'none' הוא מה שמנטרל את ההפרעה של הדפדפן
+
 const editIconBtnStyle = { background: 'none', border: 'none', color: '#95a5a6', cursor: 'pointer', padding: '5px' };
 const editInputStyle = { flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #bdc3c7', fontFamily: 'Arial' };
 const saveEditBtnStyle = { backgroundColor: '#2ecc71', color: 'white', border: 'none', borderRadius: '8px', padding: '0 15px', cursor: 'pointer' };
