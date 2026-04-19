@@ -1,8 +1,10 @@
-import { useState, useRef, useEffect } from 'react';
-import { Camera, Mic, FileText, Loader, Square, Edit2, Check, ArrowRight, GripVertical, X, Save, Plus } from 'lucide-react';
-import { storage, db } from '../firebase';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { useState, useRef } from 'react';
+import { Camera, Mic, FileText, Loader, Square, Edit2, Check, ArrowRight, GripVertical, Plus } from 'lucide-react';
+import { db } from '../firebase';
 import { doc, updateDoc } from 'firebase/firestore';
+
+// הנה הייבוא של הרכיב החדש שיצרנו!
+import AnnotationModal from './AnnotationModal';
 
 export default function ActiveTour({ user, isOnline, activeReport, setActiveReport, setView, closeTour }) {
   const [isUploading, setIsUploading] = useState(false);
@@ -17,81 +19,19 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
   const [editingGroupTitle, setEditingGroupTitle] = useState(null);
   const [editGroupTitleText, setEditGroupTitleText] = useState('');
 
+  // States for Annotation Modal
   const [isAnnotating, setIsAnnotating] = useState(false);
   const [pendingPhoto, setPendingPhoto] = useState(null);
-  const canvasRef = useRef(null);
-  const isDrawing = useRef(false);
-  const ctxRef = useRef(null);
   
   const fileInputRef = useRef(null);
 
-  // === Annotation & Compression Logic ===
+  // תופסים את התמונה ומעבירים למודל הציור
   const handleFileSelect = (event) => {
     const file = event.target.files[0];
     if (!file) return;
     const objectUrl = URL.createObjectURL(file);
     setPendingPhoto(objectUrl);
     setIsAnnotating(true);
-  };
-
-  useEffect(() => {
-    if (isAnnotating && pendingPhoto && canvasRef.current) {
-      const canvas = canvasRef.current;
-      const context = canvas.getContext('2d');
-      const img = new Image();
-      
-      img.onload = () => {
-        const MAX_WIDTH = 1000;
-        let newWidth = img.width;
-        let newHeight = img.height;
-        if (newWidth > MAX_WIDTH) { newHeight = (newHeight * MAX_WIDTH) / newWidth; newWidth = MAX_WIDTH; }
-        canvas.width = newWidth;
-        canvas.height = newHeight;
-        context.drawImage(img, 0, 0, newWidth, newHeight);
-        context.strokeStyle = '#e74c3c';
-        context.lineWidth = 6;
-        context.lineCap = 'round';
-        context.lineJoin = 'round';
-        ctxRef.current = context;
-      };
-      img.src = pendingPhoto;
-    }
-  }, [isAnnotating, pendingPhoto]);
-
-  const getCoordinates = (e) => {
-    const canvas = canvasRef.current;
-    const rect = canvas.getBoundingClientRect();
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
-  };
-
-  const startDrawing = (e) => { e.preventDefault(); isDrawing.current = true; const { x, y } = getCoordinates(e); ctxRef.current.beginPath(); ctxRef.current.moveTo(x, y); };
-  const draw = (e) => { e.preventDefault(); if (!isDrawing.current || !ctxRef.current) return; const { x, y } = getCoordinates(e); ctxRef.current.lineTo(x, y); ctxRef.current.stroke(); };
-  const stopDrawing = () => { isDrawing.current = false; ctxRef.current?.beginPath(); };
-
-  const handleUploadAnnotated = async () => {
-    setIsUploading(true); setIsAnnotating(false);
-    const canvas = canvasRef.current;
-    
-    canvas.toBlob(async (blob) => {
-      try {
-        const filename = `tour_${user.uid}_${Date.now()}.jpg`;
-        const storageRef = ref(storage, `images/${filename}`);
-        await uploadBytes(storageRef, blob);
-        const url = await getDownloadURL(storageRef);
-        
-        const newGroup = { id: `group_${Date.now()}`, title: '', images: [url], notes: [] };
-        const updatedGroups = [newGroup, ...(activeReport.groups || [])];
-        const updatedReport = { ...activeReport, groups: updatedGroups, updatedAt: new Date().toISOString() };
-        
-        await updateDoc(doc(db, "reports", activeReport.id), { groups: updatedGroups, updatedAt: updatedReport.updatedAt });
-        setActiveReport(updatedReport);
-      } catch (error) { alert("שגיאה בהעלאת התמונה."); } 
-      finally { setIsUploading(false); setPendingPhoto(null); }
-    }, 'image/jpeg', 0.7); 
   };
 
   const createNewEmptyGroup = async () => {
@@ -132,7 +72,7 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     if (isOnline) { try { await updateDoc(doc(db, "reports", activeReport.id), { ungroupedNotes: updatedUngrouped, updatedAt: updatedReport.updatedAt }); } catch(e) {} }
   };
 
-  // === Drag & Drop Logic (FIXED DEEP COPY) ===
+  // === Drag & Drop Logic (Deep Copy) ===
   const handleDragStart = (e, sourceGroupId, type, index) => {
     setDraggedItem({ sourceGroupId, type, index });
     if(e.dataTransfer) { e.dataTransfer.setData('text/plain', ''); e.dataTransfer.effectAllowed = 'move'; }
@@ -148,13 +88,11 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     const { sourceGroupId, type, index } = draggedItem;
     if (sourceGroupId === targetGroupId) return;
 
-    // Deep Copy לניתוק הזיכרון ומניעת קפיאות במסך
     let newGroups = JSON.parse(JSON.stringify(activeReport.groups || []));
     let newUngroupedNotes = [...(activeReport.ungroupedNotes || [])];
     let newUngroupedImages = [...(activeReport.ungroupedImages || [])];
     let itemContent = null;
 
-    // Remove from Source
     if (sourceGroupId === 'ungrouped') {
       if (type === 'note') { itemContent = newUngroupedNotes[index]; newUngroupedNotes.splice(index, 1); } 
       else { itemContent = newUngroupedImages[index]; newUngroupedImages.splice(index, 1); }
@@ -166,9 +104,8 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
       }
     }
 
-    if (!itemContent) return; // גיבוי למקרה שהפריט לא נמצא
+    if (!itemContent) return;
 
-    // Add to Target
     if (targetGroupId === 'ungrouped') {
       if (type === 'note') newUngroupedNotes.push(itemContent);
       else newUngroupedImages.push(itemContent);
@@ -180,7 +117,6 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
       }
     }
 
-    // ניקוי אוטומטי של קבוצות ריקות לחלוטין
     newGroups = newGroups.filter(g => g.images.length > 0 || g.notes.length > 0 || g.title.trim() !== '');
 
     const updatedReport = { ...activeReport, groups: newGroups, ungroupedNotes: newUngroupedNotes, ungroupedImages: newUngroupedImages, updatedAt: new Date().toISOString() };
@@ -239,19 +175,20 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
   const getGroupZoneStyle = (isHovered) => ({ display: 'flex', flexDirection: 'column', gap: '15px', padding: '20px', backgroundColor: isHovered ? '#ebf5fb' : 'white', borderRadius: '15px', marginBottom: '25px', boxShadow: isHovered ? '0 8px 25px rgba(52, 152, 219, 0.2)' : '0 2px 8px rgba(0,0,0,0.05)', border: isHovered ? '3px dashed #3498db' : '3px solid transparent', transition: 'all 0.2s ease', minHeight: '180px' });
 
   // === RENDER ===
+
+  // קורא לרכיב הציור החדש
   if (isAnnotating) {
     return (
-      <div style={annotationModalStyle} dir="rtl">
-        <div style={annotationHeaderStyle}>
-          <button onClick={() => setIsAnnotating(false)} style={cancelBtnStyle}><X size={20} /> ביטול</button>
-          <span style={{color: 'white', fontWeight: 'bold'}}>סמן על התמונה</span>
-          <button onClick={handleUploadAnnotated} style={saveAnnotateBtnStyle}><Save size={20} /> שמור</button>
-        </div>
-        <div style={canvasContainerStyle}>
-          <canvas ref={canvasRef} onPointerDown={startDrawing} onPointerMove={draw} onPointerUp={stopDrawing} onPointerOut={stopDrawing} onTouchStart={startDrawing} onTouchMove={draw} onTouchEnd={stopDrawing} style={canvasStyle} />
-        </div>
-        <p style={{color: '#bdc3c7', textAlign: 'center', marginTop: '15px', fontSize: '14px'}}>העבר אצבע כדי לסמן (התמונה תכווץ אוטומטית)</p>
-      </div>
+      <AnnotationModal 
+        user={user}
+        isOnline={isOnline}
+        pendingPhoto={pendingPhoto}
+        setPendingPhoto={setPendingPhoto}
+        setIsAnnotating={setIsAnnotating}
+        setIsUploading={setIsUploading}
+        activeReport={activeReport}
+        setActiveReport={setActiveReport}
+      />
     );
   }
 
@@ -296,14 +233,12 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
           </div>
         )}
 
-        {/* Ungrouped Images */}
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '15px' }}>
           {(activeReport.ungroupedImages || []).map((imgUrl, i) => (
             <img key={`u_img_${i}`} src={imgUrl} draggable onDragStart={(e) => handleDragStart(e, 'ungrouped', 'image', i)} style={draggableImgStyle} alt="ungrouped" />
           ))}
         </div>
 
-        {/* Ungrouped Notes */}
         {(activeReport.ungroupedNotes || []).length === 0 && (activeReport.ungroupedImages || []).length === 0 && !isAddingText ? 
           <p style={{color: '#bdc3c7', fontSize: '14px', fontStyle: 'italic'}}>האזור הכללי ריק.</p> : 
           (activeReport.ungroupedNotes || []).map((n, i) => renderNote(n, i, 'ungrouped'))
@@ -314,7 +249,6 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
       {(activeReport.groups || []).map((group) => (
         <div key={group.id} onDragOver={(e) => handleDragOver(e, group.id)} onDragLeave={handleDragLeave} onDrop={(e) => handleDrop(e, group.id)} style={getGroupZoneStyle(dragOverGroupId === group.id)}>
           
-          {/* GROUP HEADER: Title Editing */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #eee', paddingBottom: '10px', marginBottom: '10px' }}>
             {editingGroupTitle === group.id ? (
               <div style={{ display: 'flex', gap: '10px', width: '100%', alignItems: 'center' }}>
@@ -329,14 +263,12 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
             )}
           </div>
 
-          {/* GROUP IMAGES */}
           <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', minHeight: '20px' }}>
             {group.images.map((imgUrl, i) => (
               <img key={`g_img_${group.id}_${i}`} src={imgUrl} draggable onDragStart={(e) => handleDragStart(e, group.id, 'image', i)} style={draggableImgStyle} alt="group item" />
             ))}
           </div>
 
-          {/* GROUP NOTES */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' }}>
             {group.notes.length === 0 && group.images.length === 0 ? 
               <div style={{ padding: '15px', borderRadius: '10px', backgroundColor: 'rgba(0,0,0,0.02)', border: '1px dashed #bdc3c7', color: '#95a5a6', fontSize: '14px', textAlign: 'center' }}>
@@ -364,11 +296,3 @@ const editIconBtnStyle = { background: 'none', border: 'none', color: '#95a5a6',
 const editInputStyle = { flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #bdc3c7', fontFamily: 'Arial' };
 const saveEditBtnStyle = { backgroundColor: '#2ecc71', color: 'white', border: 'none', borderRadius: '8px', padding: '0 15px', cursor: 'pointer' };
 const addTextBtnStyle = { display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 12px', backgroundColor: '#fff', color: '#2c3e50', border: '1px solid #bdc3c7', borderRadius: '8px', fontSize: '13px', cursor: 'pointer', fontWeight: 'bold', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' };
-
-// Annotation Modal Styles
-const annotationModalStyle = { position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: '#1e272e', zIndex: 9999, display: 'flex', flexDirection: 'column' };
-const annotationHeaderStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px', backgroundColor: '#2c3e50' };
-const cancelBtnStyle = { background: 'none', border: 'none', color: '#e74c3c', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer' };
-const saveAnnotateBtnStyle = { background: '#2ecc71', border: 'none', color: 'white', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '16px', fontWeight: 'bold', padding: '8px 15px', borderRadius: '8px', cursor: 'pointer' };
-const canvasContainerStyle = { flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '10px', overflow: 'hidden' };
-const canvasStyle = { maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', touchAction: 'none', border: '2px solid #34495e', borderRadius: '8px', backgroundColor: '#000' };
