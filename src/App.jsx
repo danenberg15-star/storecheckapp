@@ -19,8 +19,9 @@ function App() {
   const [isRecording, setIsRecording] = useState(false);
   
   // States for Editing and Dragging
-  const [editingNote, setEditingNote] = useState(null); // { groupId, index, text }
-  const [draggedItem, setDraggedItem] = useState(null); // { sourceGroupId, noteIndex }
+  const [editingNote, setEditingNote] = useState(null);
+  const [draggedItem, setDraggedItem] = useState(null);
+  const [dragOverGroupId, setDragOverGroupId] = useState(null); // זיהוי האזור שמעליו מרחפים כרגע
   
   const fileInputRef = useRef(null);
 
@@ -146,23 +147,36 @@ function App() {
     recognition.start();
   };
 
-  // Drag and Drop Logic
+  // --- Drag and Drop Logic ---
   const handleDragStart = (e, sourceGroupId, noteIndex) => {
     setDraggedItem({ sourceGroupId, noteIndex });
     if(e.dataTransfer) { e.dataTransfer.setData('text/plain', ''); e.dataTransfer.effectAllowed = 'move'; }
   };
 
+  const handleDragOver = (e, targetGroupId) => {
+    e.preventDefault(); // חובה כדי לאפשר שחרור
+    if (dragOverGroupId !== targetGroupId) {
+      setDragOverGroupId(targetGroupId); // צובע את המסגרת
+    }
+  };
+
+  const handleDragLeave = () => {
+    setDragOverGroupId(null);
+  };
+
   const handleDrop = async (e, targetGroupId) => {
     e.preventDefault();
+    setDragOverGroupId(null); // מנקה את הצבע של המסגרת
     if (!draggedItem) return;
+    
     const { sourceGroupId, noteIndex } = draggedItem;
-    if (sourceGroupId === targetGroupId) return; // Dropped in same group
+    if (sourceGroupId === targetGroupId) return; // לא עושה כלום אם נפל באותה קבוצה
 
     let newGroups = [...(activeReport.groups || [])];
     let newUngrouped = [...(activeReport.ungroupedNotes || [])];
     let noteText = '';
 
-    // Remove from source
+    // מחיקה ממקור ההעתקה
     if (sourceGroupId === 'ungrouped') {
       noteText = newUngrouped[noteIndex];
       newUngrouped.splice(noteIndex, 1);
@@ -172,7 +186,7 @@ function App() {
       newGroups[gIndex].notes.splice(noteIndex, 1);
     }
 
-    // Add to target
+    // הוספה ליעד החדש
     if (targetGroupId === 'ungrouped') {
       newUngrouped.push(noteText);
     } else {
@@ -189,7 +203,6 @@ function App() {
     }
   };
 
-  // Edit Logic
   const saveNoteEdit = async () => {
     let newGroups = [...(activeReport.groups || [])];
     let newUngrouped = [...(activeReport.ungroupedNotes || [])];
@@ -210,7 +223,6 @@ function App() {
     }
   };
 
-  // Render Helpers
   const renderNote = (noteText, index, groupId) => {
     const isEditing = editingNote?.groupId === groupId && editingNote?.index === index;
     return (
@@ -236,6 +248,31 @@ function App() {
     );
   };
 
+  // --- העיצובים החדשים לאזורי הקליטה (דינמיים לפי הריחוף) ---
+  const getDropZoneStyle = (isHovered) => ({
+    padding: '20px',
+    backgroundColor: isHovered ? '#e8f4f8' : '#ecf0f1',
+    borderRadius: '15px',
+    marginBottom: '20px',
+    border: isHovered ? '3px dashed #3498db' : '3px dashed #bdc3c7',
+    minHeight: '120px',
+    transition: 'all 0.2s ease',
+    boxShadow: isHovered ? '0 0 15px rgba(52, 152, 219, 0.3)' : 'none'
+  });
+
+  const getGroupZoneStyle = (isHovered) => ({
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '15px',
+    padding: '20px',
+    backgroundColor: isHovered ? '#ebf5fb' : 'white',
+    borderRadius: '15px',
+    marginBottom: '25px',
+    boxShadow: isHovered ? '0 8px 25px rgba(52, 152, 219, 0.2)' : '0 2px 8px rgba(0,0,0,0.05)',
+    border: isHovered ? '3px dashed #3498db' : '3px solid transparent',
+    transition: 'all 0.2s ease',
+    minHeight: '180px' // אזור קליטה רחב יותר
+  });
 
   if (!user) {
     return (
@@ -260,21 +297,19 @@ function App() {
           <p>{new Date(activeReport.createdAt).toLocaleDateString('he-IL')}</p>
         </div>
         
-        {/* Ungrouped Notes in Report */}
         {activeReport.ungroupedNotes && activeReport.ungroupedNotes.length > 0 && (
           <div style={reportGroupStyle}>
-            <h3 style={{color: '#7f8c8d'}}>הערות כלליות (ללא תמונה):</h3>
+            <h3 style={{color: '#7f8c8d'}}>הערות כלליות:</h3>
             {activeReport.ungroupedNotes.map((n, i) => <p key={i} style={noteItemStyle}>{n}</p>)}
           </div>
         )}
 
-        {/* Grouped Notes & Images in Report */}
         {activeReport.groups && activeReport.groups.map(group => (
           <div key={group.id} style={reportGroupStyle}>
             <img src={group.imageUrl} style={reportGroupImgStyle} alt="store" />
             <div style={{flex: 1}}>
-              <h3 style={{marginTop: 0}}>הערות לתמונה:</h3>
-              {group.notes.length === 0 ? <p style={{color: '#95a5a6', fontStyle: 'italic'}}>אין הערות משויכות</p> : null}
+              <h3 style={{marginTop: 0, color: '#2c3e50'}}>הערות לתמונה:</h3>
+              {group.notes.length === 0 ? <p style={{color: '#95a5a6', fontStyle: 'italic'}}>אין הערות</p> : null}
               {group.notes.map((n, i) => <p key={i} style={noteItemStyle}>{n}</p>)}
             </div>
           </div>
@@ -337,36 +372,45 @@ function App() {
           <input type="file" accept="image/*" capture="environment" ref={fileInputRef} onChange={handleCapture} style={{ display: 'none' }} />
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-            <span style={{ fontWeight: 'bold', color: '#34495e' }}>תיעוד הסיור</span>
+            <span style={{ fontWeight: 'bold', color: '#34495e', fontSize: '18px' }}>תיעוד וסיווג</span>
             <button onClick={() => setView('report')} style={genBtnStyle}><FileText size={14}/> דוח מלא</button>
           </div>
 
           {/* UNGROUPED NOTES ZONE */}
           <div 
-            onDragOver={(e) => e.preventDefault()} 
+            onDragOver={(e) => handleDragOver(e, 'ungrouped')} 
+            onDragLeave={handleDragLeave}
             onDrop={(e) => handleDrop(e, 'ungrouped')} 
-            style={dropZoneStyle}
+            style={getDropZoneStyle(dragOverGroupId === 'ungrouped')}
           >
-            <h3 style={{fontSize: '14px', color: '#7f8c8d', margin: '0 0 10px 0'}}>הערות כלליות (ללא תמונה) - גרור לפה</h3>
+            <h3 style={{fontSize: '15px', color: '#34495e', margin: '0 0 15px 0'}}>הערות כלליות - גרור לכאן</h3>
             {(activeReport.ungroupedNotes || []).length === 0 ? 
-              <p style={{color: '#bdc3c7', fontSize: '13px', fontStyle: 'italic'}}>אין הערות כלליות</p> : 
+              <p style={{color: '#bdc3c7', fontSize: '14px', fontStyle: 'italic'}}>אין הערות - הקלט עכשיו</p> : 
               (activeReport.ungroupedNotes || []).map((n, i) => renderNote(n, i, 'ungrouped'))
             }
           </div>
 
           {/* IMAGE GROUPS ZONE */}
-          {(activeReport.groups || []).map(group => (
+          {(activeReport.groups || []).map((group, index) => (
             <div 
               key={group.id} 
-              onDragOver={(e) => e.preventDefault()} 
+              onDragOver={(e) => handleDragOver(e, group.id)} 
+              onDragLeave={handleDragLeave}
               onDrop={(e) => handleDrop(e, group.id)}
-              style={groupZoneStyle}
+              style={getGroupZoneStyle(dragOverGroupId === group.id)}
             >
-              <img src={group.imageUrl} style={{width: '70px', height: '70px', borderRadius: '10px', objectFit: 'cover'}} alt="group img" />
-              <div style={{flex: 1, display: 'flex', flexDirection: 'column', gap: '8px'}}>
+              <div style={{ display: 'flex', gap: '15px', alignItems: 'flex-start' }}>
+                <img src={group.imageUrl} style={{width: '90px', height: '90px', borderRadius: '12px', objectFit: 'cover', border: '1px solid #eee'}} alt="group img" />
+                <div style={{ flex: 1 }}>
+                  <h3 style={{ margin: '0 0 5px 0', color: '#2c3e50', fontSize: '16px' }}>תמונה {index + 1}</h3>
+                  <p style={{ margin: 0, color: '#7f8c8d', fontSize: '13px' }}>הטל טקסט לתוך המסגרת כדי לשייך</p>
+                </div>
+              </div>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' }}>
                 {group.notes.length === 0 ? 
-                  <div style={{border: '1px dashed #bdc3c7', padding: '10px', borderRadius: '8px', color: '#95a5a6', fontSize: '13px', textAlign: 'center'}}>
-                    גרור הערות לתוך התמונה הזו
+                  <div style={{ padding: '15px', borderRadius: '10px', backgroundColor: 'rgba(0,0,0,0.02)', border: '1px dashed #bdc3c7', color: '#95a5a6', fontSize: '14px', textAlign: 'center' }}>
+                    אזור קליטה: גרור הערה לפה
                   </div> : 
                   group.notes.map((n, i) => renderNote(n, i, group.id))
                 }
@@ -379,7 +423,7 @@ function App() {
   );
 }
 
-// STYLES
+// STATIC STYLES
 const loginContainerStyle = { display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#f0f2f5' };
 const loginCardStyle = { padding: '40px', backgroundColor: 'white', borderRadius: '25px', textAlign: 'center', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' };
 const loginBtnStyle = { display: 'flex', alignItems: 'center', gap: '10px', padding: '15px 30px', backgroundColor: '#4285F4', color: 'white', border: 'none', borderRadius: '12px', cursor: 'pointer', fontWeight: 'bold' };
@@ -391,26 +435,21 @@ const newReportContainerStyle = { display: 'flex', flexDirection: 'column', gap:
 const inputStyle = { padding: '15px', borderRadius: '10px', border: '1px solid #ddd', fontSize: '16px', outline: 'none' };
 const startBtnStyle = { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '15px', backgroundColor: '#2c3e50', color: 'white', border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' };
 const reportCardStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px', backgroundColor: 'white', borderRadius: '15px', marginBottom: '15px', cursor: 'pointer', boxShadow: '0 2px 5px rgba(0,0,0,0.02)', border: '1px solid #eee' };
-const actionGridStyle = { display: 'flex', gap: '15px', marginBottom: '20px' };
-const btnStyle = { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', padding: '20px', backgroundColor: '#2c3e50', color: 'white', border: 'none', borderRadius: '20px', flex: 1, fontWeight: 'bold' };
-const genBtnStyle = { display: 'flex', alignItems: 'center', gap: '5px', padding: '8px 15px', backgroundColor: '#3498db', color: 'white', border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: 'bold' };
-const backBtnStyle = { border: 'none', background: 'none', color: '#3498db', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 'bold' };
+const actionGridStyle = { display: 'flex', gap: '15px', marginBottom: '30px' };
+const btnStyle = { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', padding: '20px', backgroundColor: '#2c3e50', color: 'white', border: 'none', borderRadius: '20px', flex: 1, fontWeight: 'bold', boxShadow: '0 4px 10px rgba(0,0,0,0.1)' };
+const genBtnStyle = { display: 'flex', alignItems: 'center', gap: '5px', padding: '10px 18px', backgroundColor: '#3498db', color: 'white', border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: 'bold' };
+const backBtnStyle = { border: 'none', background: 'none', color: '#3498db', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 'bold', fontSize: '16px' };
 
-// DRAG AND DROP STYLES
-const dropZoneStyle = { padding: '15px', backgroundColor: '#ecf0f1', borderRadius: '15px', marginBottom: '20px', border: '2px dashed #bdc3c7', minHeight: '80px' };
-const groupZoneStyle = { display: 'flex', gap: '15px', padding: '15px', backgroundColor: 'white', borderRadius: '15px', marginBottom: '15px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', border: '2px solid transparent', transition: '0.2s' };
-const draggableNoteStyle = { display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '12px', backgroundColor: '#fff', borderRadius: '10px', borderRight: '4px solid #3498db', marginBottom: '8px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' };
-
+const draggableNoteStyle = { display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '15px', backgroundColor: '#fff', borderRadius: '12px', borderRight: '5px solid #3498db', marginBottom: '10px', boxShadow: '0 2px 6px rgba(0,0,0,0.08)' };
 const editIconBtnStyle = { background: 'none', border: 'none', color: '#95a5a6', cursor: 'pointer', padding: '5px' };
 const editInputStyle = { flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #bdc3c7', fontFamily: 'Arial' };
 const saveEditBtnStyle = { backgroundColor: '#2ecc71', color: 'white', border: 'none', borderRadius: '8px', padding: '0 15px', cursor: 'pointer' };
 
-// REPORT STYLES
 const reportContainerStyle = { padding: '20px', maxWidth: '800px', margin: '0 auto', backgroundColor: 'white', minHeight: '100vh' };
-const reportHeaderStyle = { textAlign: 'center', borderBottom: '2px solid #eee', paddingBottom: '20px' };
-const reportGroupStyle = { display: 'flex', gap: '20px', padding: '20px', border: '1px solid #ddd', borderRadius: '15px', marginBottom: '20px', backgroundColor: '#fcfcfc' };
-const reportGroupImgStyle = { width: '150px', height: '150px', objectFit: 'cover', borderRadius: '10px', boxShadow: '0 2px 5px rgba(0,0,0,0.1)' };
-const noteItemStyle = { padding: '12px', background: '#fff', borderRight: '4px solid #3498db', marginBottom: '10px', fontSize: '15px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' };
-const printBtnStyle = { padding: '10px 20px', backgroundColor: '#27ae60', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold' };
+const reportHeaderStyle = { textAlign: 'center', borderBottom: '2px solid #eee', paddingBottom: '20px', marginBottom: '30px' };
+const reportGroupStyle = { display: 'flex', flexDirection: 'column', gap: '15px', padding: '20px', border: '1px solid #eee', borderRadius: '15px', marginBottom: '25px', backgroundColor: '#fcfcfc', boxShadow: '0 2px 10px rgba(0,0,0,0.03)' };
+const reportGroupImgStyle = { width: '100%', maxHeight: '400px', objectFit: 'cover', borderRadius: '12px' };
+const noteItemStyle = { padding: '15px', background: '#fff', borderRight: '5px solid #3498db', marginBottom: '10px', fontSize: '16px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', borderRadius: '8px' };
+const printBtnStyle = { padding: '10px 20px', backgroundColor: '#27ae60', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '16px' };
 
 export default App;
