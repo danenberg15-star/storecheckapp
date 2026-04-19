@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react';
 import { Wifi, WifiOff, LogOut, Download } from 'lucide-react';
 import { db, auth, provider } from './firebase';
-import { collection, addDoc, getDocs, query, where } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, where, doc, deleteDoc } from 'firebase/firestore';
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 
-// ייבוא הרכיבים שיצרנו
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import ActiveTour from './components/ActiveTour';
@@ -20,7 +19,6 @@ export default function App() {
   const [activeReport, setActiveReport] = useState(null);
   const [newReportTitle, setNewReportTitle] = useState('');
 
-  // אתחול והאזנה לחיבורים
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
@@ -43,7 +41,6 @@ export default function App() {
     };
   }, []);
 
-  // שמירה רציפה לזיכרון נגד קריסות
   useEffect(() => {
     if (activeReport && user) {
       localStorage.setItem(`saved_report_${user.uid}`, JSON.stringify(activeReport));
@@ -53,9 +50,19 @@ export default function App() {
   const migrateOldReport = (report) => {
     let migrated = { ...report };
     if (!migrated.groups) {
-      migrated.groups = (migrated.images || []).map(url => ({ id: url, imageUrl: url, notes: [] }));
+      migrated.groups = (migrated.images || []).map((url, i) => ({ id: `group_${i}_${Date.now()}`, title: '', images: [url], notes: [] }));
       migrated.ungroupedNotes = migrated.notes || [];
+      migrated.ungroupedImages = [];
+    } else {
+      migrated.groups = migrated.groups.map(g => ({
+        ...g,
+        title: g.title || '',
+        images: g.images || (g.imageUrl ? [g.imageUrl] : []),
+        notes: g.notes || []
+      }));
     }
+    if (!migrated.ungroupedImages) migrated.ungroupedImages = [];
+    if (!migrated.ungroupedNotes) migrated.ungroupedNotes = [];
     return migrated;
   };
 
@@ -75,6 +82,16 @@ export default function App() {
       loadedReports.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
       setReports(loadedReports);
     } catch (e) { console.error("Error fetching reports:", e); }
+  };
+
+  const deleteReport = async (reportId) => {
+    if (!window.confirm("האם למחוק סיור זה לצמיתות?")) return;
+    try {
+      await deleteDoc(doc(db, "reports", reportId));
+      setReports(prev => prev.filter(r => r.id !== reportId));
+    } catch (error) {
+      alert("שגיאה במחיקת הסיור.");
+    }
   };
 
   const handleLogin = async () => {
@@ -98,7 +115,7 @@ export default function App() {
     if (!newReportTitle.trim()) return alert("אנא הזן כותרת לסיור");
     const newReport = {
       title: newReportTitle, userId: user.uid, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-      groups: [], ungroupedNotes: []
+      groups: [], ungroupedNotes: [], ungroupedImages: []
     };
     try {
       const docRef = await addDoc(collection(db, "reports"), newReport);
@@ -111,19 +128,11 @@ export default function App() {
   const resumeReport = (report) => { setActiveReport(report); setView('tour'); };
   const closeTour = () => { localStorage.removeItem(`saved_report_${user.uid}`); setActiveReport(null); fetchReports(user.uid); setView('dashboard'); };
 
-  // === אזור הרינדור של האפליקציה (Routing) ===
-  
-  if (!user) {
-    return <Login handleLogin={handleLogin} />;
-  }
-
-  if (view === 'report') {
-    return <ReportView activeReport={activeReport} setView={setView} />;
-  }
+  if (!user) return <Login handleLogin={handleLogin} />;
+  if (view === 'report') return <ReportView activeReport={activeReport} setView={setView} />;
 
   return (
     <div style={containerStyle} dir="rtl">
-      {/* שורת הסטטוס העליונה קבועה תמיד */}
       <div style={statusBarStyle}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <div style={avatarStyle}>{user.displayName?.charAt(0)}</div>
@@ -139,7 +148,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* חילוף המסכים */}
       {view === 'dashboard' && (
         <Dashboard 
           reports={reports} 
@@ -147,6 +155,7 @@ export default function App() {
           startNewReport={startNewReport} 
           newReportTitle={newReportTitle} 
           setNewReportTitle={setNewReportTitle} 
+          deleteReport={deleteReport}
         />
       )}
 
@@ -164,7 +173,6 @@ export default function App() {
   );
 }
 
-// Global App Styles
 const containerStyle = { padding: '20px', maxWidth: '500px', margin: '0 auto', fontFamily: 'Arial', minHeight: '100vh', backgroundColor: '#f9fbfb' };
 const statusBarStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', paddingBottom: '10px', borderBottom: '1px solid #eee' };
 const avatarStyle = { width: '35px', height: '35px', backgroundColor: '#3498db', color: 'white', borderRadius: '50%', display: 'flex', justifyContent: 'center', alignItems: 'center', fontWeight: 'bold' };

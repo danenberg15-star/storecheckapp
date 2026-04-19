@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Camera, Mic, FileText, Loader, Square, Edit2, Check, ArrowRight, GripVertical, X, Save } from 'lucide-react';
+import { Camera, Mic, FileText, Loader, Square, Edit2, Check, ArrowRight, GripVertical, X, Save, Plus } from 'lucide-react';
 import { storage, db } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { doc, updateDoc } from 'firebase/firestore';
@@ -14,7 +14,9 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
   const [isAddingText, setIsAddingText] = useState(false);
   const [newTextNote, setNewTextNote] = useState('');
   
-  // States for Image Annotation & Compression
+  const [editingGroupTitle, setEditingGroupTitle] = useState(null);
+  const [editGroupTitleText, setEditGroupTitleText] = useState('');
+
   const [isAnnotating, setIsAnnotating] = useState(false);
   const [pendingPhoto, setPendingPhoto] = useState(null);
   const canvasRef = useRef(null);
@@ -24,19 +26,14 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
   const fileInputRef = useRef(null);
 
   // === Annotation & Compression Logic ===
-
-  // 1. תופסים את התמונה מהמצלמה לפני העלאה
   const handleFileSelect = (event) => {
     const file = event.target.files[0];
     if (!file) return;
-    
-    // יוצרים קישור זמני לתמונה בתוך הזיכרון של הטלפון
     const objectUrl = URL.createObjectURL(file);
     setPendingPhoto(objectUrl);
     setIsAnnotating(true);
   };
 
-  // 2. טוענים את התמונה לקנבס, מכווצים אותה, ומכינים אותה לציור
   useEffect(() => {
     if (isAnnotating && pendingPhoto && canvasRef.current) {
       const canvas = canvasRef.current;
@@ -44,80 +41,41 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
       const img = new Image();
       
       img.onload = () => {
-        // --- כיווץ התמונה למקסימום 1000 פיקסלים רוחב ---
         const MAX_WIDTH = 1000;
         let newWidth = img.width;
         let newHeight = img.height;
-        
-        if (newWidth > MAX_WIDTH) {
-          newHeight = (newHeight * MAX_WIDTH) / newWidth;
-          newWidth = MAX_WIDTH;
-        }
-        
+        if (newWidth > MAX_WIDTH) { newHeight = (newHeight * MAX_WIDTH) / newWidth; newWidth = MAX_WIDTH; }
         canvas.width = newWidth;
         canvas.height = newHeight;
-        
-        // מציירים את התמונה המכווצת על הקנבס
         context.drawImage(img, 0, 0, newWidth, newHeight);
-        
-        // הגדרות העט (טוש אדום)
         context.strokeStyle = '#e74c3c';
         context.lineWidth = 6;
         context.lineCap = 'round';
         context.lineJoin = 'round';
-        
         ctxRef.current = context;
       };
-      
       img.src = pendingPhoto;
     }
   }, [isAnnotating, pendingPhoto]);
 
-  // 3. פונקציות ציור על המסך
   const getCoordinates = (e) => {
     const canvas = canvasRef.current;
     const rect = canvas.getBoundingClientRect();
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
-    
-    return {
-      x: (clientX - rect.left) * scaleX,
-      y: (clientY - rect.top) * scaleY
-    };
+    return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
   };
 
-  const startDrawing = (e) => {
-    e.preventDefault(); // מונע גלילה של המסך בזמן שמציירים
-    isDrawing.current = true;
-    const { x, y } = getCoordinates(e);
-    ctxRef.current.beginPath();
-    ctxRef.current.moveTo(x, y);
-  };
+  const startDrawing = (e) => { e.preventDefault(); isDrawing.current = true; const { x, y } = getCoordinates(e); ctxRef.current.beginPath(); ctxRef.current.moveTo(x, y); };
+  const draw = (e) => { e.preventDefault(); if (!isDrawing.current || !ctxRef.current) return; const { x, y } = getCoordinates(e); ctxRef.current.lineTo(x, y); ctxRef.current.stroke(); };
+  const stopDrawing = () => { isDrawing.current = false; ctxRef.current?.beginPath(); };
 
-  const draw = (e) => {
-    e.preventDefault();
-    if (!isDrawing.current || !ctxRef.current) return;
-    const { x, y } = getCoordinates(e);
-    ctxRef.current.lineTo(x, y);
-    ctxRef.current.stroke();
-  };
-
-  const stopDrawing = () => {
-    isDrawing.current = false;
-    ctxRef.current?.beginPath();
-  };
-
-  // 4. שמירה, העלאה והוספה לדוח
   const handleUploadAnnotated = async () => {
-    setIsUploading(true);
-    setIsAnnotating(false); // סוגרים את חלון הציור
-    
+    setIsUploading(true); setIsAnnotating(false);
     const canvas = canvasRef.current;
     
-    // הופכים את הקנבס לקובץ תמונה קטן (איכות 0.7 מקצצת 80% מהמשקל!)
     canvas.toBlob(async (blob) => {
       try {
         const filename = `tour_${user.uid}_${Date.now()}.jpg`;
@@ -125,21 +83,24 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
         await uploadBytes(storageRef, blob);
         const url = await getDownloadURL(storageRef);
         
-        const newGroup = { id: `group_${Date.now()}`, imageUrl: url, notes: [] };
-        const updatedGroups = [...(activeReport.groups || []), newGroup];
+        const newGroup = { id: `group_${Date.now()}`, title: '', images: [url], notes: [] };
+        const updatedGroups = [newGroup, ...(activeReport.groups || [])];
         const updatedReport = { ...activeReport, groups: updatedGroups, updatedAt: new Date().toISOString() };
         
         await updateDoc(doc(db, "reports", activeReport.id), { groups: updatedGroups, updatedAt: updatedReport.updatedAt });
         setActiveReport(updatedReport);
-      } catch (error) {
-        alert("שגיאה בהעלאת התמונה.");
-      } finally {
-        setIsUploading(false);
-        setPendingPhoto(null);
-      }
+      } catch (error) { alert("שגיאה בהעלאת התמונה."); } 
+      finally { setIsUploading(false); setPendingPhoto(null); }
     }, 'image/jpeg', 0.7); 
   };
 
+  const createNewEmptyGroup = async () => {
+    const newGroup = { id: `group_${Date.now()}`, title: '', images: [], notes: [] };
+    const updatedGroups = [newGroup, ...(activeReport.groups || [])];
+    const updatedReport = { ...activeReport, groups: updatedGroups, updatedAt: new Date().toISOString() };
+    setActiveReport(updatedReport);
+    if (isOnline) await updateDoc(doc(db, "reports", activeReport.id), { groups: updatedGroups, updatedAt: updatedReport.updatedAt });
+  };
 
   // === Voice & Text Logic ===
   const startRecording = () => {
@@ -147,6 +108,7 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     if (!SpeechRecognition) return alert("הדפדפן שלך לא תומך בהקלטה. השתמש בטקסט חופשי.");
     const recognition = new SpeechRecognition();
     recognition.lang = 'he-IL';
+    recognition.continuous = false;
     recognition.onstart = () => setIsRecording(true);
     recognition.onerror = (e) => { setIsRecording(false); console.error(e); };
     recognition.onresult = async (event) => {
@@ -155,10 +117,7 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
       const updatedReport = { ...activeReport, ungroupedNotes: updatedUngrouped, updatedAt: new Date().toISOString() };
       
       setActiveReport(updatedReport);
-      if (isOnline) {
-        try { await updateDoc(doc(db, "reports", activeReport.id), { ungroupedNotes: updatedUngrouped, updatedAt: updatedReport.updatedAt }); } 
-        catch(e) { console.error(e); }
-      }
+      if (isOnline) { try { await updateDoc(doc(db, "reports", activeReport.id), { ungroupedNotes: updatedUngrouped, updatedAt: updatedReport.updatedAt }); } catch(e) {} }
     };
     recognition.onend = () => setIsRecording(false);
     recognition.start();
@@ -168,79 +127,86 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     if (!newTextNote.trim()) { setIsAddingText(false); return; }
     const updatedUngrouped = [...(activeReport.ungroupedNotes || []), newTextNote.trim()];
     const updatedReport = { ...activeReport, ungroupedNotes: updatedUngrouped, updatedAt: new Date().toISOString() };
-    
     setActiveReport(updatedReport);
-    setNewTextNote('');
-    setIsAddingText(false);
-
-    if (isOnline) {
-      try { await updateDoc(doc(db, "reports", activeReport.id), { ungroupedNotes: updatedUngrouped, updatedAt: updatedReport.updatedAt }); } 
-      catch(e) { console.error(e); }
-    }
+    setNewTextNote(''); setIsAddingText(false);
+    if (isOnline) { try { await updateDoc(doc(db, "reports", activeReport.id), { ungroupedNotes: updatedUngrouped, updatedAt: updatedReport.updatedAt }); } catch(e) {} }
   };
 
-  // === Drag & Drop Logic ===
-  const handleDragStart = (e, sourceGroupId, noteIndex) => {
-    setDraggedItem({ sourceGroupId, noteIndex });
+  // === Drag & Drop Logic (Handles Both Images and Notes) ===
+  const handleDragStart = (e, sourceGroupId, type, index) => {
+    setDraggedItem({ sourceGroupId, type, index });
     if(e.dataTransfer) { e.dataTransfer.setData('text/plain', ''); e.dataTransfer.effectAllowed = 'move'; }
   };
   const handleDragOver = (e, targetGroupId) => { e.preventDefault(); if (dragOverGroupId !== targetGroupId) setDragOverGroupId(targetGroupId); };
   const handleDragLeave = () => setDragOverGroupId(null);
   
   const handleDrop = async (e, targetGroupId) => {
-    e.preventDefault();
-    setDragOverGroupId(null);
+    e.preventDefault(); setDragOverGroupId(null);
     if (!draggedItem) return;
-    const { sourceGroupId, noteIndex } = draggedItem;
+    const { sourceGroupId, type, index } = draggedItem;
     if (sourceGroupId === targetGroupId) return;
 
     let newGroups = [...(activeReport.groups || [])];
-    let newUngrouped = [...(activeReport.ungroupedNotes || [])];
-    let noteText = '';
+    let newUngroupedNotes = [...(activeReport.ungroupedNotes || [])];
+    let newUngroupedImages = [...(activeReport.ungroupedImages || [])];
+    let itemContent = null;
 
+    // Remove from Source
     if (sourceGroupId === 'ungrouped') {
-      noteText = newUngrouped[noteIndex];
-      newUngrouped.splice(noteIndex, 1);
+      if (type === 'note') { itemContent = newUngroupedNotes[index]; newUngroupedNotes.splice(index, 1); } 
+      else { itemContent = newUngroupedImages[index]; newUngroupedImages.splice(index, 1); }
     } else {
       const gIndex = newGroups.findIndex(g => g.id === sourceGroupId);
-      noteText = newGroups[gIndex].notes[noteIndex];
-      newGroups[gIndex].notes.splice(noteIndex, 1);
+      if (type === 'note') { itemContent = newGroups[gIndex].notes[index]; newGroups[gIndex].notes.splice(index, 1); } 
+      else { itemContent = newGroups[gIndex].images[index]; newGroups[gIndex].images.splice(index, 1); }
     }
 
-    if (targetGroupId === 'ungrouped') newUngrouped.push(noteText);
-    else {
+    // Add to Target
+    if (targetGroupId === 'ungrouped') {
+      if (type === 'note') newUngroupedNotes.push(itemContent);
+      else newUngroupedImages.push(itemContent);
+    } else {
       const gIndex = newGroups.findIndex(g => g.id === targetGroupId);
-      newGroups[gIndex].notes.push(noteText);
+      if (type === 'note') newGroups[gIndex].notes.push(itemContent);
+      else newGroups[gIndex].images.push(itemContent);
     }
 
-    const updatedReport = { ...activeReport, groups: newGroups, ungroupedNotes: newUngrouped, updatedAt: new Date().toISOString() };
+    // ניקוי אוטומטי של קבוצות ריקות לחלוטין (ללא כותרת, ללא תמונה וללא טקסט)
+    newGroups = newGroups.filter(g => g.images.length > 0 || g.notes.length > 0 || g.title.trim() !== '');
+
+    const updatedReport = { ...activeReport, groups: newGroups, ungroupedNotes: newUngroupedNotes, ungroupedImages: newUngroupedImages, updatedAt: new Date().toISOString() };
     setActiveReport(updatedReport);
     setDraggedItem(null);
 
-    if (isOnline) await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, ungroupedNotes: newUngrouped, updatedAt: updatedReport.updatedAt });
+    if (isOnline) await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, ungroupedNotes: newUngroupedNotes, ungroupedImages: newUngroupedImages, updatedAt: updatedReport.updatedAt });
   };
 
   const saveNoteEdit = async () => {
     let newGroups = [...(activeReport.groups || [])];
     let newUngrouped = [...(activeReport.ungroupedNotes || [])];
-
     if (editingNote.groupId === 'ungrouped') newUngrouped[editingNote.index] = editingNote.text;
     else {
       const gIndex = newGroups.findIndex(g => g.id === editingNote.groupId);
       newGroups[gIndex].notes[editingNote.index] = editingNote.text;
     }
-
     const updatedReport = { ...activeReport, groups: newGroups, ungroupedNotes: newUngrouped, updatedAt: new Date().toISOString() };
-    setActiveReport(updatedReport);
-    setEditingNote(null);
-
+    setActiveReport(updatedReport); setEditingNote(null);
     if (isOnline) await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, ungroupedNotes: newUngrouped, updatedAt: updatedReport.updatedAt });
+  };
+
+  const saveGroupTitle = async (groupId) => {
+    let newGroups = [...(activeReport.groups || [])];
+    const gIndex = newGroups.findIndex(g => g.id === groupId);
+    newGroups[gIndex].title = editGroupTitleText;
+    const updatedReport = { ...activeReport, groups: newGroups, updatedAt: new Date().toISOString() };
+    setActiveReport(updatedReport); setEditingGroupTitle(null);
+    if (isOnline) await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, updatedAt: updatedReport.updatedAt });
   };
 
   const renderNote = (noteText, index, groupId) => {
     const isEditing = editingNote?.groupId === groupId && editingNote?.index === index;
     return (
-      <div key={index} draggable onDragStart={(e) => handleDragStart(e, groupId, index)} style={draggableNoteStyle}>
+      <div key={index} draggable onDragStart={(e) => handleDragStart(e, groupId, 'note', index)} style={draggableNoteStyle}>
         <GripVertical size={16} color="#bdc3c7" style={{cursor: 'grab'}} />
         {isEditing ? (
           <div style={{ display: 'flex', gap: '10px', width: '100%', alignItems: 'center' }}>
@@ -261,29 +227,16 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
   const getGroupZoneStyle = (isHovered) => ({ display: 'flex', flexDirection: 'column', gap: '15px', padding: '20px', backgroundColor: isHovered ? '#ebf5fb' : 'white', borderRadius: '15px', marginBottom: '25px', boxShadow: isHovered ? '0 8px 25px rgba(52, 152, 219, 0.2)' : '0 2px 8px rgba(0,0,0,0.05)', border: isHovered ? '3px dashed #3498db' : '3px solid transparent', transition: 'all 0.2s ease', minHeight: '180px' });
 
   // === RENDER ===
-  
-  // אם אנחנו במצב ציור (Annotation Modal)
   if (isAnnotating) {
     return (
       <div style={annotationModalStyle} dir="rtl">
         <div style={annotationHeaderStyle}>
           <button onClick={() => setIsAnnotating(false)} style={cancelBtnStyle}><X size={20} /> ביטול</button>
           <span style={{color: 'white', fontWeight: 'bold'}}>סמן על התמונה</span>
-          <button onClick={handleUploadAnnotated} style={saveAnnotateBtnStyle}><Save size={20} /> העלה</button>
+          <button onClick={handleUploadAnnotated} style={saveAnnotateBtnStyle}><Save size={20} /> שמור</button>
         </div>
-        
         <div style={canvasContainerStyle}>
-          <canvas
-            ref={canvasRef}
-            onPointerDown={startDrawing}
-            onPointerMove={draw}
-            onPointerUp={stopDrawing}
-            onPointerOut={stopDrawing}
-            onTouchStart={startDrawing}
-            onTouchMove={draw}
-            onTouchEnd={stopDrawing}
-            style={canvasStyle}
-          />
+          <canvas ref={canvasRef} onPointerDown={startDrawing} onPointerMove={draw} onPointerUp={stopDrawing} onPointerOut={stopDrawing} onTouchStart={startDrawing} onTouchMove={draw} onTouchEnd={stopDrawing} style={canvasStyle} />
         </div>
         <p style={{color: '#bdc3c7', textAlign: 'center', marginTop: '15px', fontSize: '14px'}}>העבר אצבע כדי לסמן (התמונה תכווץ אוטומטית)</p>
       </div>
@@ -307,18 +260,20 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
           <span>הקלטה</span>
         </button>
       </div>
-      
-      {/* שינוי הפונקציה המופעלת בצילום תמונה */}
       <input type="file" accept="image/*" capture="environment" ref={fileInputRef} onChange={handleFileSelect} style={{ display: 'none' }} />
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
         <span style={{ fontWeight: 'bold', color: '#34495e', fontSize: '18px' }}>תיעוד וסיווג</span>
-        <button onClick={() => setView('report')} style={genBtnStyle}><FileText size={14}/> דוח מלא</button>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button onClick={createNewEmptyGroup} style={addGroupBtnStyle}><Plus size={14}/> קבוצה</button>
+          <button onClick={() => setView('report')} style={genBtnStyle}><FileText size={14}/> דוח מלא</button>
+        </div>
       </div>
 
+      {/* UNGROUPED ZONE */}
       <div onDragOver={(e) => handleDragOver(e, 'ungrouped')} onDragLeave={handleDragLeave} onDrop={(e) => handleDrop(e, 'ungrouped')} style={getDropZoneStyle(dragOverGroupId === 'ungrouped')}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-          <h3 style={{fontSize: '15px', color: '#34495e', margin: 0}}>הערות כלליות - גרור לכאן</h3>
+          <h3 style={{fontSize: '15px', color: '#34495e', margin: 0}}>אזור חופשי - תמונות והערות למחזור</h3>
           <button onClick={() => setIsAddingText(true)} style={addTextBtnStyle}><Edit2 size={14} /> טקסט חופשי</button>
         </div>
 
@@ -329,29 +284,56 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
           </div>
         )}
 
-        {(activeReport.ungroupedNotes || []).length === 0 && !isAddingText ? 
-          <p style={{color: '#bdc3c7', fontSize: '14px', fontStyle: 'italic'}}>אין הערות - הקלט או הקלד עכשיו</p> : 
+        {/* Ungrouped Images */}
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '15px' }}>
+          {(activeReport.ungroupedImages || []).map((imgUrl, i) => (
+            <img key={i} src={imgUrl} draggable onDragStart={(e) => handleDragStart(e, 'ungrouped', 'image', i)} style={draggableImgStyle} alt="ungrouped" />
+          ))}
+        </div>
+
+        {/* Ungrouped Notes */}
+        {(activeReport.ungroupedNotes || []).length === 0 && (activeReport.ungroupedImages || []).length === 0 && !isAddingText ? 
+          <p style={{color: '#bdc3c7', fontSize: '14px', fontStyle: 'italic'}}>האזור הכללי ריק.</p> : 
           (activeReport.ungroupedNotes || []).map((n, i) => renderNote(n, i, 'ungrouped'))
         }
       </div>
 
-      {(activeReport.groups || []).map((group, index) => (
+      {/* IMAGE GROUPS ZONE */}
+      {(activeReport.groups || []).map((group) => (
         <div key={group.id} onDragOver={(e) => handleDragOver(e, group.id)} onDragLeave={handleDragLeave} onDrop={(e) => handleDrop(e, group.id)} style={getGroupZoneStyle(dragOverGroupId === group.id)}>
-          <div style={{ display: 'flex', gap: '15px', alignItems: 'flex-start' }}>
-            <img src={group.imageUrl} style={{width: '90px', height: '90px', borderRadius: '12px', objectFit: 'cover', border: '1px solid #eee'}} alt="group img" />
-            <div style={{ flex: 1 }}>
-              <h3 style={{ margin: '0 0 5px 0', color: '#2c3e50', fontSize: '16px' }}>תמונה {index + 1}</h3>
-              <p style={{ margin: 0, color: '#7f8c8d', fontSize: '13px' }}>הטל טקסט לתוך המסגרת כדי לשייך</p>
-            </div>
+          
+          {/* GROUP HEADER: Title Editing */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #eee', paddingBottom: '10px', marginBottom: '10px' }}>
+            {editingGroupTitle === group.id ? (
+              <div style={{ display: 'flex', gap: '10px', width: '100%', alignItems: 'center' }}>
+                <input value={editGroupTitleText} onChange={e => setEditGroupTitleText(e.target.value)} style={editInputStyle} placeholder="שם הקבוצה (למשל: תצוגת קופה)..." />
+                <button onClick={() => saveGroupTitle(group.id)} style={saveEditBtnStyle}><Check size={18} /></button>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <h3 style={{ margin: 0, color: '#2c3e50', fontSize: '16px' }}>{group.title || 'קבוצה ללא שם'}</h3>
+                <button onClick={() => { setEditingGroupTitle(group.id); setEditGroupTitleText(group.title || ''); }} style={editIconBtnStyle}><Edit2 size={14} /></button>
+              </div>
+            )}
           </div>
+
+          {/* GROUP IMAGES */}
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', minHeight: '20px' }}>
+            {group.images.map((imgUrl, i) => (
+              <img key={i} src={imgUrl} draggable onDragStart={(e) => handleDragStart(e, group.id, 'image', i)} style={draggableImgStyle} alt="group item" />
+            ))}
+          </div>
+
+          {/* GROUP NOTES */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' }}>
-            {group.notes.length === 0 ? 
+            {group.notes.length === 0 && group.images.length === 0 ? 
               <div style={{ padding: '15px', borderRadius: '10px', backgroundColor: 'rgba(0,0,0,0.02)', border: '1px dashed #bdc3c7', color: '#95a5a6', fontSize: '14px', textAlign: 'center' }}>
-                אזור קליטה: גרור הערה לפה
+                הקבוצה ריקה: גרור תמונות או הערות לפה
               </div> : 
               group.notes.map((n, i) => renderNote(n, i, group.id))
             }
           </div>
+
         </div>
       ))}
     </div>
@@ -361,9 +343,11 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
 // Static Styles
 const actionGridStyle = { display: 'flex', gap: '15px', marginBottom: '30px' };
 const btnStyle = { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', padding: '20px', backgroundColor: '#2c3e50', color: 'white', border: 'none', borderRadius: '20px', flex: 1, fontWeight: 'bold', boxShadow: '0 4px 10px rgba(0,0,0,0.1)' };
-const genBtnStyle = { display: 'flex', alignItems: 'center', gap: '5px', padding: '10px 18px', backgroundColor: '#3498db', color: 'white', border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: 'bold' };
+const genBtnStyle = { display: 'flex', alignItems: 'center', gap: '5px', padding: '8px 15px', backgroundColor: '#3498db', color: 'white', border: 'none', borderRadius: '10px', fontSize: '13px', fontWeight: 'bold' };
+const addGroupBtnStyle = { display: 'flex', alignItems: 'center', gap: '5px', padding: '8px 15px', backgroundColor: '#9b59b6', color: 'white', border: 'none', borderRadius: '10px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer' };
 const backBtnStyle = { border: 'none', background: 'none', color: '#3498db', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 'bold', fontSize: '16px' };
 const draggableNoteStyle = { display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '15px', backgroundColor: '#fff', borderRadius: '12px', borderRight: '5px solid #3498db', marginBottom: '10px', boxShadow: '0 2px 6px rgba(0,0,0,0.08)' };
+const draggableImgStyle = { width: '80px', height: '80px', objectFit: 'cover', borderRadius: '8px', cursor: 'grab', border: '2px solid transparent', boxShadow: '0 2px 5px rgba(0,0,0,0.1)' };
 const editIconBtnStyle = { background: 'none', border: 'none', color: '#95a5a6', cursor: 'pointer', padding: '5px' };
 const editInputStyle = { flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #bdc3c7', fontFamily: 'Arial' };
 const saveEditBtnStyle = { backgroundColor: '#2ecc71', color: 'white', border: 'none', borderRadius: '8px', padding: '0 15px', cursor: 'pointer' };
