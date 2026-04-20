@@ -4,6 +4,9 @@ import { storage, db } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { doc, updateDoc } from 'firebase/firestore';
 
+// ייבוא פונקציית השמירה המקומית שיצרנו
+import { saveImageOffline } from '../offlineStorage';
+
 export default function AnnotationModal({ 
   user, isOnline, pendingPhoto, setPendingPhoto, setIsAnnotating, 
   setIsUploading, activeReport, setActiveReport 
@@ -50,25 +53,48 @@ export default function AnnotationModal({
   const draw = (e) => { e.preventDefault(); if (!isDrawing.current || !ctxRef.current) return; const { x, y } = getCoordinates(e); ctxRef.current.lineTo(x, y); ctxRef.current.stroke(); };
   const stopDrawing = () => { isDrawing.current = false; ctxRef.current?.beginPath(); };
 
+  // הלוגיקה החדשה של ההעלאה מול אופליין
   const handleUploadAnnotated = async () => {
-    setIsUploading(true); setIsAnnotating(false);
+    setIsUploading(true); 
+    setIsAnnotating(false);
     const canvas = canvasRef.current;
     
     canvas.toBlob(async (blob) => {
       try {
-        const filename = `tour_${user.uid}_${Date.now()}.jpg`;
-        const storageRef = ref(storage, `images/${filename}`);
-        await uploadBytes(storageRef, blob);
-        const url = await getDownloadURL(storageRef);
-        
-        const newGroup = { id: `group_${Date.now()}`, title: '', images: [url], notes: [] };
+        const groupId = `group_${Date.now()}`;
+        let finalUrl = '';
+
+        if (isOnline) {
+          // יש אינטרנט - העלאה רגילה לענן
+          const filename = `tour_${user.uid}_${Date.now()}.jpg`;
+          const storageRef = ref(storage, `images/${filename}`);
+          await uploadBytes(storageRef, blob);
+          finalUrl = await getDownloadURL(storageRef);
+        } else {
+          // אופליין - שמירה לזיכרון המקומי ויצירת לינק זמני לתצוגה
+          finalUrl = URL.createObjectURL(blob);
+          await saveImageOffline(activeReport.id, groupId, blob, finalUrl);
+        }
+
+        // עדכון הדוח עם הלינק (הקבוע או הזמני)
+        const newGroup = { id: groupId, title: '', images: [finalUrl], notes: [] };
         const updatedGroups = [newGroup, ...(activeReport.groups || [])];
         const updatedReport = { ...activeReport, groups: updatedGroups, updatedAt: new Date().toISOString() };
         
-        await updateDoc(doc(db, "reports", activeReport.id), { groups: updatedGroups, updatedAt: updatedReport.updatedAt });
         setActiveReport(updatedReport);
-      } catch (error) { alert("שגיאה בהעלאת התמונה."); } 
-      finally { setIsUploading(false); setPendingPhoto(null); }
+        
+        try {
+          await updateDoc(doc(db, "reports", activeReport.id), { groups: updatedGroups, updatedAt: updatedReport.updatedAt });
+        } catch (firestoreError) {
+          // מנוע ה-offline של Firestore ידאג לסנכרן את זה כשנחזור לאונליין
+        }
+
+      } catch (error) { 
+        alert("שגיאה בעיבוד התמונה."); 
+      } finally { 
+        setIsUploading(false); 
+        setPendingPhoto(null); 
+      }
     }, 'image/jpeg', 0.7); 
   };
 
