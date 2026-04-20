@@ -1,5 +1,5 @@
-import { useRef, useEffect } from 'react';
-import { X, Save } from 'lucide-react';
+import { useRef, useEffect, useState } from 'react';
+import { X, Save, Loader } from 'lucide-react';
 import { storage, db } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { doc, updateDoc } from 'firebase/firestore';
@@ -14,6 +14,9 @@ export default function AnnotationModal({
   const canvasRef = useRef(null);
   const isDrawing = useRef(false);
   const ctxRef = useRef(null);
+  
+  // סטטוס פנימי למניעת לחיצות כפולות בזמן השמירה
+  const [isProcessing, setIsProcessing] = useState(false);
 
   useEffect(() => {
     if (pendingPhoto && canvasRef.current) {
@@ -53,10 +56,10 @@ export default function AnnotationModal({
   const draw = (e) => { e.preventDefault(); if (!isDrawing.current || !ctxRef.current) return; const { x, y } = getCoordinates(e); ctxRef.current.lineTo(x, y); ctxRef.current.stroke(); };
   const stopDrawing = () => { isDrawing.current = false; ctxRef.current?.beginPath(); };
 
-  // הלוגיקה החדשה של ההעלאה מול אופליין
   const handleUploadAnnotated = async () => {
+    setIsProcessing(true); // חוסם את הכפתור בזמן העיבוד
     setIsUploading(true); 
-    setIsAnnotating(false);
+    
     const canvas = canvasRef.current;
     
     canvas.toBlob(async (blob) => {
@@ -65,18 +68,15 @@ export default function AnnotationModal({
         let finalUrl = '';
 
         if (isOnline) {
-          // יש אינטרנט - העלאה רגילה לענן
           const filename = `tour_${user.uid}_${Date.now()}.jpg`;
           const storageRef = ref(storage, `images/${filename}`);
           await uploadBytes(storageRef, blob);
           finalUrl = await getDownloadURL(storageRef);
         } else {
-          // אופליין - שמירה לזיכרון המקומי ויצירת לינק זמני לתצוגה
           finalUrl = URL.createObjectURL(blob);
           await saveImageOffline(activeReport.id, groupId, blob, finalUrl);
         }
 
-        // עדכון הדוח עם הלינק (הקבוע או הזמני)
         const newGroup = { id: groupId, title: '', images: [finalUrl], notes: [] };
         const updatedGroups = [newGroup, ...(activeReport.groups || [])];
         const updatedReport = { ...activeReport, groups: updatedGroups, updatedAt: new Date().toISOString() };
@@ -86,13 +86,16 @@ export default function AnnotationModal({
         try {
           await updateDoc(doc(db, "reports", activeReport.id), { groups: updatedGroups, updatedAt: updatedReport.updatedAt });
         } catch (firestoreError) {
-          // מנוע ה-offline של Firestore ידאג לסנכרן את זה כשנחזור לאונליין
+          // מנוע ה-offline יסנכרן מאוחר יותר
         }
 
       } catch (error) { 
         alert("שגיאה בעיבוד התמונה."); 
       } finally { 
+        // רק אחרי שהכל הסתיים בהצלחה, אנחנו משחררים וסוגרים את המסך
+        setIsProcessing(false);
         setIsUploading(false); 
+        setIsAnnotating(false); 
         setPendingPhoto(null); 
       }
     }, 'image/jpeg', 0.7); 
@@ -101,9 +104,14 @@ export default function AnnotationModal({
   return (
     <div style={annotationModalStyle} dir="rtl">
       <div style={annotationHeaderStyle}>
-        <button onClick={() => {setIsAnnotating(false); setPendingPhoto(null);}} style={cancelBtnStyle}><X size={20} /> ביטול</button>
+        <button onClick={() => {setIsAnnotating(false); setPendingPhoto(null);}} style={cancelBtnStyle} disabled={isProcessing}>
+          <X size={20} /> ביטול
+        </button>
         <span style={{color: 'white', fontWeight: 'bold'}}>סמן על התמונה</span>
-        <button onClick={handleUploadAnnotated} style={saveAnnotateBtnStyle}><Save size={20} /> שמור</button>
+        <button onClick={handleUploadAnnotated} style={saveAnnotateBtnStyle} disabled={isProcessing}>
+          {isProcessing ? <Loader className="spin" size={20} /> : <Save size={20} />}
+          {isProcessing ? 'שומר...' : 'שמור'}
+        </button>
       </div>
       <div style={canvasContainerStyle}>
         <canvas ref={canvasRef} onPointerDown={startDrawing} onPointerMove={draw} onPointerUp={stopDrawing} onPointerOut={stopDrawing} onTouchStart={startDrawing} onTouchMove={draw} onTouchEnd={stopDrawing} style={canvasStyle} />

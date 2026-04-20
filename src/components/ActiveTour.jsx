@@ -29,6 +29,11 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     const objectUrl = URL.createObjectURL(file);
     setPendingPhoto(objectUrl);
     setIsAnnotating(true);
+    
+    // התיקון: איפוס הקלט כדי לאפשר צילום של תמונות נוספות ברצף באופליין
+    if (event.target) {
+      event.target.value = '';
+    }
   };
 
   const createNewEmptyGroup = async () => {
@@ -36,28 +41,18 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     const updatedGroups = [newGroup, ...(activeReport.groups || [])];
     const updatedReport = { ...activeReport, groups: updatedGroups, updatedAt: new Date().toISOString() };
     setActiveReport(updatedReport);
-    
-    // הוסר התנאי isOnline כדי לאפשר סנכרון Firestore אופליין
-    try {
-      await updateDoc(doc(db, "reports", activeReport.id), { groups: updatedGroups, updatedAt: updatedReport.updatedAt });
-    } catch (e) {
-      console.error("Firestore sync pending (offline)");
-    }
+    if (isOnline) await updateDoc(doc(db, "reports", activeReport.id), { groups: updatedGroups, updatedAt: updatedReport.updatedAt });
   };
 
+  // מחיקת קבוצה ריקה
   const deleteEmptyGroup = async (groupId) => {
     const newGroups = (activeReport.groups || []).filter(g => g.id !== groupId);
     const updatedReport = { ...activeReport, groups: newGroups, updatedAt: new Date().toISOString() };
     setActiveReport(updatedReport);
-    
-    // הוסר התנאי isOnline
-    try {
-      await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, updatedAt: updatedReport.updatedAt });
-    } catch (e) {
-      console.error("Firestore sync pending (offline)");
-    }
+    if (isOnline) await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, updatedAt: updatedReport.updatedAt });
   };
 
+  // === Voice & Text Logic ===
   const startRecording = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) return alert("הדפדפן שלך לא תומך בהקלטה. השתמש בטקסט חופשי.");
@@ -72,10 +67,7 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
       const updatedReport = { ...activeReport, ungroupedNotes: updatedUngrouped, updatedAt: new Date().toISOString() };
       
       setActiveReport(updatedReport);
-      // הוסר התנאי isOnline
-      try { 
-        await updateDoc(doc(db, "reports", activeReport.id), { ungroupedNotes: updatedUngrouped, updatedAt: updatedReport.updatedAt }); 
-      } catch(e) {}
+      if (isOnline) { try { await updateDoc(doc(db, "reports", activeReport.id), { ungroupedNotes: updatedUngrouped, updatedAt: updatedReport.updatedAt }); } catch(e) {} }
     };
     recognition.onend = () => setIsRecording(false);
     recognition.start();
@@ -87,12 +79,10 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     const updatedReport = { ...activeReport, ungroupedNotes: updatedUngrouped, updatedAt: new Date().toISOString() };
     setActiveReport(updatedReport);
     setNewTextNote(''); setIsAddingText(false);
-    // הוסר התנאי isOnline
-    try { 
-      await updateDoc(doc(db, "reports", activeReport.id), { ungroupedNotes: updatedUngrouped, updatedAt: updatedReport.updatedAt }); 
-    } catch(e) {}
+    if (isOnline) { try { await updateDoc(doc(db, "reports", activeReport.id), { ungroupedNotes: updatedUngrouped, updatedAt: updatedReport.updatedAt }); } catch(e) {} }
   };
 
+  // === Drag & Drop Logic ===
   const handleDragStart = (e, sourceGroupId, type, index) => {
     draggedItemRef.current = { sourceGroupId, type, index };
     if(e.dataTransfer) { 
@@ -162,12 +152,7 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     setActiveReport(updatedReport);
     draggedItemRef.current = null;
 
-    // הוסר התנאי isOnline
-    try {
-      await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, ungroupedNotes: newUngroupedNotes, ungroupedImages: newUngroupedImages, updatedAt: updatedReport.updatedAt });
-    } catch (e) {
-      console.error("Firestore sync pending (offline)");
-    }
+    if (isOnline) await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, ungroupedNotes: newUngroupedNotes, ungroupedImages: newUngroupedImages, updatedAt: updatedReport.updatedAt });
   };
 
   const saveNoteEdit = async () => {
@@ -182,12 +167,7 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     
     const updatedReport = { ...activeReport, groups: newGroups, ungroupedNotes: newUngrouped, updatedAt: new Date().toISOString() };
     setActiveReport(updatedReport); setEditingNote(null);
-    // הוסר התנאי isOnline
-    try {
-      await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, ungroupedNotes: newUngrouped, updatedAt: updatedReport.updatedAt });
-    } catch (e) {
-      console.error("Firestore sync pending (offline)");
-    }
+    if (isOnline) await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, ungroupedNotes: newUngrouped, updatedAt: updatedReport.updatedAt });
   };
 
   const saveGroupTitle = async (groupId) => {
@@ -197,12 +177,7 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     
     const updatedReport = { ...activeReport, groups: newGroups, updatedAt: new Date().toISOString() };
     setActiveReport(updatedReport); setEditingGroupTitle(null);
-    // הוסר התנאי isOnline
-    try {
-      await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, updatedAt: updatedReport.updatedAt });
-    } catch (e) {
-      console.error("Firestore sync pending (offline)");
-    }
+    if (isOnline) await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, updatedAt: updatedReport.updatedAt });
   };
 
   const renderNote = (noteText, index, groupId) => {
@@ -234,6 +209,7 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
   const getDropZoneStyle = (isHovered) => ({ padding: '20px', backgroundColor: isHovered ? '#e8f4f8' : '#ecf0f1', borderRadius: '15px', marginBottom: '20px', border: isHovered ? '3px dashed #3498db' : '3px dashed #bdc3c7', minHeight: '120px', transition: 'all 0.2s ease', boxShadow: isHovered ? '0 0 15px rgba(52, 152, 219, 0.3)' : 'none' });
   const getGroupZoneStyle = (isHovered) => ({ display: 'flex', flexDirection: 'column', gap: '15px', padding: '20px', backgroundColor: isHovered ? '#ebf5fb' : 'white', borderRadius: '15px', marginBottom: '25px', boxShadow: isHovered ? '0 8px 25px rgba(52, 152, 219, 0.2)' : '0 2px 8px rgba(0,0,0,0.05)', border: isHovered ? '3px dashed #3498db' : '3px solid transparent', transition: 'all 0.2s ease', minHeight: '180px' });
 
+  // === RENDER ===
   if (isAnnotating) {
     return (
       <AnnotationModal 
