@@ -36,18 +36,28 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     const updatedGroups = [newGroup, ...(activeReport.groups || [])];
     const updatedReport = { ...activeReport, groups: updatedGroups, updatedAt: new Date().toISOString() };
     setActiveReport(updatedReport);
-    if (isOnline) await updateDoc(doc(db, "reports", activeReport.id), { groups: updatedGroups, updatedAt: updatedReport.updatedAt });
+    
+    // הוסר התנאי isOnline כדי לאפשר סנכרון Firestore אופליין
+    try {
+      await updateDoc(doc(db, "reports", activeReport.id), { groups: updatedGroups, updatedAt: updatedReport.updatedAt });
+    } catch (e) {
+      console.error("Firestore sync pending (offline)");
+    }
   };
 
-  // מחיקת קבוצה ריקה
   const deleteEmptyGroup = async (groupId) => {
     const newGroups = (activeReport.groups || []).filter(g => g.id !== groupId);
     const updatedReport = { ...activeReport, groups: newGroups, updatedAt: new Date().toISOString() };
     setActiveReport(updatedReport);
-    if (isOnline) await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, updatedAt: updatedReport.updatedAt });
+    
+    // הוסר התנאי isOnline
+    try {
+      await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, updatedAt: updatedReport.updatedAt });
+    } catch (e) {
+      console.error("Firestore sync pending (offline)");
+    }
   };
 
-  // === Voice & Text Logic ===
   const startRecording = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) return alert("הדפדפן שלך לא תומך בהקלטה. השתמש בטקסט חופשי.");
@@ -62,7 +72,10 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
       const updatedReport = { ...activeReport, ungroupedNotes: updatedUngrouped, updatedAt: new Date().toISOString() };
       
       setActiveReport(updatedReport);
-      if (isOnline) { try { await updateDoc(doc(db, "reports", activeReport.id), { ungroupedNotes: updatedUngrouped, updatedAt: updatedReport.updatedAt }); } catch(e) {} }
+      // הוסר התנאי isOnline
+      try { 
+        await updateDoc(doc(db, "reports", activeReport.id), { ungroupedNotes: updatedUngrouped, updatedAt: updatedReport.updatedAt }); 
+      } catch(e) {}
     };
     recognition.onend = () => setIsRecording(false);
     recognition.start();
@@ -74,10 +87,12 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     const updatedReport = { ...activeReport, ungroupedNotes: updatedUngrouped, updatedAt: new Date().toISOString() };
     setActiveReport(updatedReport);
     setNewTextNote(''); setIsAddingText(false);
-    if (isOnline) { try { await updateDoc(doc(db, "reports", activeReport.id), { ungroupedNotes: updatedUngrouped, updatedAt: updatedReport.updatedAt }); } catch(e) {} }
+    // הוסר התנאי isOnline
+    try { 
+      await updateDoc(doc(db, "reports", activeReport.id), { ungroupedNotes: updatedUngrouped, updatedAt: updatedReport.updatedAt }); 
+    } catch(e) {}
   };
 
-  // === Drag & Drop Logic ===
   const handleDragStart = (e, sourceGroupId, type, index) => {
     draggedItemRef.current = { sourceGroupId, type, index };
     if(e.dataTransfer) { 
@@ -147,7 +162,12 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     setActiveReport(updatedReport);
     draggedItemRef.current = null;
 
-    if (isOnline) await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, ungroupedNotes: newUngroupedNotes, ungroupedImages: newUngroupedImages, updatedAt: updatedReport.updatedAt });
+    // הוסר התנאי isOnline
+    try {
+      await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, ungroupedNotes: newUngroupedNotes, ungroupedImages: newUngroupedImages, updatedAt: updatedReport.updatedAt });
+    } catch (e) {
+      console.error("Firestore sync pending (offline)");
+    }
   };
 
   const saveNoteEdit = async () => {
@@ -162,7 +182,12 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     
     const updatedReport = { ...activeReport, groups: newGroups, ungroupedNotes: newUngrouped, updatedAt: new Date().toISOString() };
     setActiveReport(updatedReport); setEditingNote(null);
-    if (isOnline) await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, ungroupedNotes: newUngrouped, updatedAt: updatedReport.updatedAt });
+    // הוסר התנאי isOnline
+    try {
+      await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, ungroupedNotes: newUngrouped, updatedAt: updatedReport.updatedAt });
+    } catch (e) {
+      console.error("Firestore sync pending (offline)");
+    }
   };
 
   const saveGroupTitle = async (groupId) => {
@@ -172,7 +197,12 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     
     const updatedReport = { ...activeReport, groups: newGroups, updatedAt: new Date().toISOString() };
     setActiveReport(updatedReport); setEditingGroupTitle(null);
-    if (isOnline) await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, updatedAt: updatedReport.updatedAt });
+    // הוסר התנאי isOnline
+    try {
+      await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, updatedAt: updatedReport.updatedAt });
+    } catch (e) {
+      console.error("Firestore sync pending (offline)");
+    }
   };
 
   const renderNote = (noteText, index, groupId) => {
@@ -204,7 +234,6 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
   const getDropZoneStyle = (isHovered) => ({ padding: '20px', backgroundColor: isHovered ? '#e8f4f8' : '#ecf0f1', borderRadius: '15px', marginBottom: '20px', border: isHovered ? '3px dashed #3498db' : '3px dashed #bdc3c7', minHeight: '120px', transition: 'all 0.2s ease', boxShadow: isHovered ? '0 0 15px rgba(52, 152, 219, 0.3)' : 'none' });
   const getGroupZoneStyle = (isHovered) => ({ display: 'flex', flexDirection: 'column', gap: '15px', padding: '20px', backgroundColor: isHovered ? '#ebf5fb' : 'white', borderRadius: '15px', marginBottom: '25px', boxShadow: isHovered ? '0 8px 25px rgba(52, 152, 219, 0.2)' : '0 2px 8px rgba(0,0,0,0.05)', border: isHovered ? '3px dashed #3498db' : '3px solid transparent', transition: 'all 0.2s ease', minHeight: '180px' });
 
-  // === RENDER ===
   if (isAnnotating) {
     return (
       <AnnotationModal 
@@ -247,7 +276,6 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
         </div>
       </div>
 
-      {/* UNGROUPED ZONE */}
       <div 
         onDragEnter={(e) => handleDragEnter(e, 'ungrouped')} 
         onDragOver={handleDragOver} 
@@ -286,7 +314,6 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
         }
       </div>
 
-      {/* IMAGE GROUPS ZONE */}
       {(activeReport.groups || []).map((group) => (
         <div 
           key={group.id} 
@@ -307,7 +334,6 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
                 <h3 style={{ margin: 0, color: '#2c3e50', fontSize: '16px' }}>{group.title || 'קבוצה ללא שם'}</h3>
                 <button onClick={() => { setEditingGroupTitle(group.id); setEditGroupTitleText(group.title || ''); }} style={editIconBtnStyle}><Edit2 size={14} /></button>
                 
-                {/* כפתור מחיקה לקבוצות ריקות בלבד */}
                 {group.images.length === 0 && group.notes.length === 0 && (
                   <button onClick={() => deleteEmptyGroup(group.id)} style={editIconBtnStyle} title="מחק קבוצה ריקה">
                     <Trash2 size={16} color="#e74c3c" />
@@ -346,17 +372,14 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
   );
 }
 
-// Static Styles
 const actionGridStyle = { display: 'flex', gap: '15px', marginBottom: '30px' };
 const btnStyle = { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', padding: '20px', backgroundColor: '#2c3e50', color: 'white', border: 'none', borderRadius: '20px', flex: 1, fontWeight: 'bold', boxShadow: '0 4px 10px rgba(0,0,0,0.1)' };
 const genBtnStyle = { display: 'flex', alignItems: 'center', gap: '5px', padding: '8px 15px', backgroundColor: '#3498db', color: 'white', border: 'none', borderRadius: '10px', fontSize: '13px', fontWeight: 'bold' };
 const addGroupBtnStyle = { display: 'flex', alignItems: 'center', gap: '5px', padding: '8px 15px', backgroundColor: '#9b59b6', color: 'white', border: 'none', borderRadius: '10px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer' };
 const backBtnStyle = { border: 'none', background: 'none', color: '#3498db', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 'bold', fontSize: '16px' };
-
 const draggableNoteStyle = { display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '15px', backgroundColor: '#fff', borderRadius: '12px', borderRight: '5px solid #3498db', marginBottom: '10px', boxShadow: '0 2px 6px rgba(0,0,0,0.08)', cursor: 'grab', touchAction: 'none' };
 const draggableImgWrapperStyle = { cursor: 'grab', display: 'inline-block', borderRadius: '8px', overflow: 'hidden', border: '2px solid transparent', boxShadow: '0 2px 5px rgba(0,0,0,0.1)', touchAction: 'none' };
 const draggableImgStyle = { width: '80px', height: '80px', objectFit: 'cover', display: 'block', pointerEvents: 'none' };
-
 const editIconBtnStyle = { background: 'none', border: 'none', color: '#95a5a6', cursor: 'pointer', padding: '5px' };
 const editInputStyle = { flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #bdc3c7', fontFamily: 'Arial' };
 const saveEditBtnStyle = { backgroundColor: '#2ecc71', color: 'white', border: 'none', borderRadius: '8px', padding: '0 15px', cursor: 'pointer' };
