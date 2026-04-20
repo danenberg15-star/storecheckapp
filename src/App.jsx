@@ -9,6 +9,9 @@ import Dashboard from './components/Dashboard';
 import ActiveTour from './components/ActiveTour';
 import ReportView from './components/ReportView';
 
+// ייבוא מנוע הסנכרון לאופליין
+import { syncOfflineImages } from './offlineStorage';
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -19,6 +22,7 @@ export default function App() {
   const [activeReport, setActiveReport] = useState(null);
   const [newReportTitle, setNewReportTitle] = useState('');
 
+  // 1. אתחול והאזנה לשינויי משתמש ורשת
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
@@ -40,6 +44,13 @@ export default function App() {
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
+
+  // 2. מנגנון סנכרון אוטומטי: רץ בכל פעם שהרשת חוזרת או כשהמשתמש מתחבר
+  useEffect(() => {
+    if (isOnline && user) {
+      syncOfflineImages(user);
+    }
+  }, [isOnline, user]);
 
   useEffect(() => {
     if (activeReport && user) {
@@ -126,7 +137,12 @@ export default function App() {
   };
 
   const resumeReport = (report) => { setActiveReport(report); setView('tour'); };
-  const closeTour = () => { localStorage.removeItem(`saved_report_${user.uid}`); setActiveReport(null); fetchReports(user.uid); setView('dashboard'); };
+  const closeTour = () => { 
+    localStorage.removeItem(`saved_report_${user.uid}`); 
+    setActiveReport(null); 
+    if (user) fetchReports(user.uid); 
+    setView('dashboard'); 
+  };
 
   if (!user) return <Login handleLogin={handleLogin} />;
   if (view === 'report') return <ReportView activeReport={activeReport} setView={setView} />;
