@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState } from 'react';
 import { X, Save, Loader } from 'lucide-react';
 import { storage, db } from '../firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { doc, updateDoc } from 'firebase/firestore';
 
 // ייבוא פונקציות השמירה והסנכרון המקומיות
@@ -8,7 +9,7 @@ import { saveImageOffline, syncOfflineImages } from '../offlineStorage';
 
 export default function AnnotationModal({ 
   user, isOnline, pendingPhoto, setPendingPhoto, setIsAnnotating, 
-  setIsUploading, activeReport, setActiveReport 
+  setIsUploading, activeReport, setActiveReport, targetGroupId 
 }) {
   const canvasRef = useRef(null);
   const isDrawing = useRef(false);
@@ -55,6 +56,8 @@ export default function AnnotationModal({
   const stopDrawing = () => { isDrawing.current = false; ctxRef.current?.beginPath(); };
 
   const handleUploadAnnotated = async () => {
+    if (!targetGroupId) return alert("שגיאה: לא נבחרה קבוצת יעד לתמונה.");
+    
     setIsProcessing(true);
     setIsUploading(true); 
     
@@ -62,38 +65,45 @@ export default function AnnotationModal({
     
     canvas.toBlob(async (blob) => {
       try {
-        const groupId = `group_${Date.now()}`;
-        
-        // החוק החדש (Local-First): 
-        // לא מעניין אותנו אם יש או אין אינטרנט. קודם שומרים לטלפון ומשחררים את המשתמש!
-        const localUrl = URL.createObjectURL(blob);
-        await saveImageOffline(activeReport.id, groupId, blob, localUrl);
+        let finalUrl = '';
 
-        // מעדכנים את הדוח המקומי עם התמונה (לינק מהטלפון)
-        const newGroup = { id: groupId, title: '', images: [localUrl], notes: [] };
-        const updatedGroups = [newGroup, ...(activeReport.groups || [])];
-        const updatedReport = { ...activeReport, groups: updatedGroups, updatedAt: new Date().toISOString() };
+        if (isOnline) {
+          const filename = `tour_${user.uid}_${Date.now()}.jpg`;
+          const storageRef = ref(storage, `images/${filename}`);
+          await uploadBytes(storageRef, blob);
+          finalUrl = await getDownloadURL(storageRef);
+        } else {
+          finalUrl = URL.createObjectURL(blob);
+          await saveImageOffline(activeReport.id, targetGroupId, blob, finalUrl);
+        }
+
+        // עדכון הקבוצה הקיימת בדוח
+        let newGroups = JSON.parse(JSON.stringify(activeReport.groups || []));
+        const gIndex = newGroups.findIndex(g => g.id === targetGroupId);
         
-        setActiveReport(updatedReport);
-        
-        try {
-          await updateDoc(doc(db, "reports", activeReport.id), { groups: updatedGroups, updatedAt: updatedReport.updatedAt });
-        } catch (firestoreError) {
-          // מנוע האופליין של Firestore כבר יסנכרן את הטקסטים
+        if (gIndex > -1) {
+          newGroups[gIndex].images.push(finalUrl);
+          
+          const updatedReport = { ...activeReport, groups: newGroups, updatedAt: new Date().toISOString() };
+          setActiveReport(updatedReport);
+          
+          try {
+            await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, updatedAt: updatedReport.updatedAt });
+          } catch (firestoreError) {
+            // סנכרון אוטומטי יתבצע בהמשך
+          }
         }
 
       } catch (error) { 
         alert("שגיאה בעיבוד התמונה."); 
       } finally { 
-        // 1. משחררים את חסימת המסך כדי שהמשתמש ימשיך לעבוד כרגיל
         setIsProcessing(false);
         setIsUploading(false); 
         setIsAnnotating(false); 
         setPendingPhoto(null); 
         
-        // 2. עכשיו, מתחת לפני השטח, קוראים למנוע הסנכרון
-        // הוא יבדוק אם יש אינטרנט, ואם כן - יתחיל להעלות ולמחוק מהטלפון בשקט
-        syncOfflineImages(user, activeReport, setActiveReport).catch(e => console.error("Background sync failed", e));
+        // הפעלת סנכרון רקע אם יש אינטרנט
+        syncOfflineImages(user, activeReport, setActiveReport).catch(e => console.error(e));
       }
     }, 'image/jpeg', 0.7); 
   };
@@ -104,16 +114,16 @@ export default function AnnotationModal({
         <button onClick={() => {setIsAnnotating(false); setPendingPhoto(null);}} style={cancelBtnStyle} disabled={isProcessing}>
           <X size={20} /> ביטול
         </button>
-        <span style={{color: 'white', fontWeight: 'bold'}}>סמן על התמונה</span>
+        <span style={{color: 'white', fontWeight: 'bold'}}>סימון על תמונה</span>
         <button onClick={handleUploadAnnotated} style={saveAnnotateBtnStyle} disabled={isProcessing}>
           {isProcessing ? <Loader className="spin" size={20} /> : <Save size={20} />}
-          {isProcessing ? 'מעבד...' : 'שמור'}
+          {isProcessing ? 'מעבד...' : 'שמור לקבוצה'}
         </button>
       </div>
       <div style={canvasContainerStyle}>
         <canvas ref={canvasRef} onPointerDown={startDrawing} onPointerMove={draw} onPointerUp={stopDrawing} onPointerOut={stopDrawing} onTouchStart={startDrawing} onTouchMove={draw} onTouchEnd={stopDrawing} style={canvasStyle} />
       </div>
-      <p style={{color: '#bdc3c7', textAlign: 'center', marginTop: '15px', fontSize: '14px'}}>העבר אצבע כדי לסמן (התמונה תכווץ אוטומטית)</p>
+      <p style={{color: '#bdc3c7', textAlign: 'center', marginTop: '15px', fontSize: '14px'}}>השתמש באצבע לסימון • התמונה תישמר ישירות לקבוצה הנבחרת</p>
     </div>
   );
 }
