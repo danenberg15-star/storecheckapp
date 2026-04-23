@@ -58,22 +58,48 @@ export default function App() {
     }
   }, [activeReport, user]);
 
+  // מנוע התרגום - הליבה שתחזיר לך את כל הנתונים הישנים למסך!
   const migrateOldReport = (report) => {
     let migrated = { ...report };
+    
+    // 1. טיפול בדוחות ישנים מאוד (לפני שהיו קבוצות בכלל)
     if (!migrated.groups) {
-      migrated.groups = (migrated.images || []).map((url, i) => ({ id: `group_${i}_${Date.now()}`, title: '', images: [url], notes: [] }));
-      migrated.ungroupedNotes = migrated.notes || [];
-      migrated.ungroupedImages = [];
-    } else {
-      migrated.groups = migrated.groups.map(g => ({
-        ...g,
-        title: g.title || '',
-        images: g.images || (g.imageUrl ? [g.imageUrl] : []),
-        notes: g.notes || []
-      }));
+      let oldItems = [];
+      (migrated.images || migrated.ungroupedImages || []).forEach((url, i) => {
+        oldItems.push({ id: `old_img_${i}_${Date.now()}`, type: 'image', url: url, note: '' });
+      });
+      (migrated.notes || migrated.ungroupedNotes || []).forEach((text, i) => {
+        oldItems.push({ id: `old_note_${i}_${Date.now()}`, type: 'note', text: text });
+      });
+      
+      if (oldItems.length > 0) {
+        migrated.groups = [{ id: `group_migrated_${Date.now()}`, title: 'אזור חופשי משוחזר', items: oldItems }];
+      } else {
+        migrated.groups = [];
+      }
     }
-    if (!migrated.ungroupedImages) migrated.ungroupedImages = [];
-    if (!migrated.ungroupedNotes) migrated.ungroupedNotes = [];
+
+    // 2. תרגום קבוצות ישנות למבנה הפריטים המאוחד (Unified Items)
+    if (migrated.groups) {
+      migrated.groups = migrated.groups.map(g => {
+        let newItems = [...(g.items || [])];
+
+        // תרגום התמונות הישנות
+        if (g.images && g.images.length > 0) {
+          g.images.forEach((url, i) => newItems.push({ id: `mig_img_${i}_${Date.now()}`, type: 'image', url: url, note: '' }));
+          delete g.images; // מוחק כדי לא לתרגם פעמיים בעתיד
+        }
+
+        // תרגום הטקסטים הישנים
+        if (g.notes && g.notes.length > 0) {
+          g.notes.forEach((text, i) => newItems.push({ id: `mig_note_${i}_${Date.now()}`, type: 'note', text: text }));
+          delete g.notes; // מוחק כדי לא לתרגם פעמיים בעתיד
+        }
+
+        return { ...g, title: g.title || '', items: newItems };
+      });
+    }
+
     return migrated;
   };
 
@@ -89,6 +115,7 @@ export default function App() {
     try {
       const q = query(collection(db, "reports"), where("userId", "==", uid));
       const querySnapshot = await getDocs(q);
+      // שימוש במנוע התרגום כדי שכל מה שנטען מהשרת יותאם מיד
       const loadedReports = querySnapshot.docs.map(doc => migrateOldReport({ id: doc.id, ...doc.data() }));
       loadedReports.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
       setReports(loadedReports);
@@ -126,7 +153,7 @@ export default function App() {
     if (!newReportTitle.trim()) return alert("אנא הזן כותרת לסיור");
     const newReport = {
       title: newReportTitle, userId: user.uid, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-      groups: [], ungroupedNotes: [], ungroupedImages: []
+      groups: []
     };
     try {
       const docRef = await addDoc(collection(db, "reports"), newReport);
