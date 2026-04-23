@@ -1,11 +1,10 @@
 import { useRef, useEffect, useState } from 'react';
 import { X, Save, Loader } from 'lucide-react';
 import { storage, db } from '../firebase';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { doc, updateDoc } from 'firebase/firestore';
 
-// ייבוא פונקציית השמירה המקומית שיצרנו
-import { saveImageOffline } from '../offlineStorage';
+// ייבוא פונקציות השמירה והסנכרון המקומיות
+import { saveImageOffline, syncOfflineImages } from '../offlineStorage';
 
 export default function AnnotationModal({ 
   user, isOnline, pendingPhoto, setPendingPhoto, setIsAnnotating, 
@@ -15,7 +14,6 @@ export default function AnnotationModal({
   const isDrawing = useRef(false);
   const ctxRef = useRef(null);
   
-  // סטטוס פנימי למניעת לחיצות כפולות בזמן השמירה
   const [isProcessing, setIsProcessing] = useState(false);
 
   useEffect(() => {
@@ -57,7 +55,7 @@ export default function AnnotationModal({
   const stopDrawing = () => { isDrawing.current = false; ctxRef.current?.beginPath(); };
 
   const handleUploadAnnotated = async () => {
-    setIsProcessing(true); // חוסם את הכפתור בזמן העיבוד
+    setIsProcessing(true);
     setIsUploading(true); 
     
     const canvas = canvasRef.current;
@@ -65,19 +63,14 @@ export default function AnnotationModal({
     canvas.toBlob(async (blob) => {
       try {
         const groupId = `group_${Date.now()}`;
-        let finalUrl = '';
+        
+        // החוק החדש (Local-First): 
+        // לא מעניין אותנו אם יש או אין אינטרנט. קודם שומרים לטלפון ומשחררים את המשתמש!
+        const localUrl = URL.createObjectURL(blob);
+        await saveImageOffline(activeReport.id, groupId, blob, localUrl);
 
-        if (isOnline) {
-          const filename = `tour_${user.uid}_${Date.now()}.jpg`;
-          const storageRef = ref(storage, `images/${filename}`);
-          await uploadBytes(storageRef, blob);
-          finalUrl = await getDownloadURL(storageRef);
-        } else {
-          finalUrl = URL.createObjectURL(blob);
-          await saveImageOffline(activeReport.id, groupId, blob, finalUrl);
-        }
-
-        const newGroup = { id: groupId, title: '', images: [finalUrl], notes: [] };
+        // מעדכנים את הדוח המקומי עם התמונה (לינק מהטלפון)
+        const newGroup = { id: groupId, title: '', images: [localUrl], notes: [] };
         const updatedGroups = [newGroup, ...(activeReport.groups || [])];
         const updatedReport = { ...activeReport, groups: updatedGroups, updatedAt: new Date().toISOString() };
         
@@ -86,17 +79,21 @@ export default function AnnotationModal({
         try {
           await updateDoc(doc(db, "reports", activeReport.id), { groups: updatedGroups, updatedAt: updatedReport.updatedAt });
         } catch (firestoreError) {
-          // מנוע ה-offline יסנכרן מאוחר יותר
+          // מנוע האופליין של Firestore כבר יסנכרן את הטקסטים
         }
 
       } catch (error) { 
         alert("שגיאה בעיבוד התמונה."); 
       } finally { 
-        // רק אחרי שהכל הסתיים בהצלחה, אנחנו משחררים וסוגרים את המסך
+        // 1. משחררים את חסימת המסך כדי שהמשתמש ימשיך לעבוד כרגיל
         setIsProcessing(false);
         setIsUploading(false); 
         setIsAnnotating(false); 
         setPendingPhoto(null); 
+        
+        // 2. עכשיו, מתחת לפני השטח, קוראים למנוע הסנכרון
+        // הוא יבדוק אם יש אינטרנט, ואם כן - יתחיל להעלות ולמחוק מהטלפון בשקט
+        syncOfflineImages(user, activeReport, setActiveReport).catch(e => console.error("Background sync failed", e));
       }
     }, 'image/jpeg', 0.7); 
   };
@@ -110,7 +107,7 @@ export default function AnnotationModal({
         <span style={{color: 'white', fontWeight: 'bold'}}>סמן על התמונה</span>
         <button onClick={handleUploadAnnotated} style={saveAnnotateBtnStyle} disabled={isProcessing}>
           {isProcessing ? <Loader className="spin" size={20} /> : <Save size={20} />}
-          {isProcessing ? 'שומר...' : 'שמור'}
+          {isProcessing ? 'מעבד...' : 'שמור'}
         </button>
       </div>
       <div style={canvasContainerStyle}>
