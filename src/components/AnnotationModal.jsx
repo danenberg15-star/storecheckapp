@@ -77,21 +77,28 @@ export default function AnnotationModal({
           await saveImageOffline(activeReport.id, targetGroupId, blob, finalUrl);
         }
 
-        // עדכון הקבוצה הקיימת בדוח
+        // עדכון הקבוצה הקיימת בתוך מערך ה-items המאוחד
         let newGroups = JSON.parse(JSON.stringify(activeReport.groups || []));
         const gIndex = newGroups.findIndex(g => g.id === targetGroupId);
         
         if (gIndex > -1) {
-          newGroups[gIndex].images.push(finalUrl);
+          const newImageItem = { 
+            id: `img_${Date.now()}`, 
+            type: 'image', 
+            url: finalUrl, 
+            note: '' 
+          };
+          
+          if (!newGroups[gIndex].items) newGroups[gIndex].items = [];
+          newGroups[gIndex].items.push(newImageItem);
           
           const updatedReport = { ...activeReport, groups: newGroups, updatedAt: new Date().toISOString() };
           setActiveReport(updatedReport);
           
-          try {
-            await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, updatedAt: updatedReport.updatedAt });
-          } catch (firestoreError) {
-            // סנכרון אוטומטי יתבצע בהמשך
-          }
+          await updateDoc(doc(db, "reports", activeReport.id), { 
+            groups: newGroups, 
+            updatedAt: updatedReport.updatedAt 
+          });
         }
 
       } catch (error) { 

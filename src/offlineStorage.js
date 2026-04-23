@@ -24,7 +24,6 @@ export async function saveImageOffline(reportId, groupId, blob, localUrl) {
   });
 }
 
-// עדכון פונקציית הסנכרון לתמיכה ב-Local First ועדכון UI חי
 export async function syncOfflineImages(user, activeReport, setActiveReport) {
   if (!user || !navigator.onLine) return;
   
@@ -37,17 +36,17 @@ export async function syncOfflineImages(user, activeReport, setActiveReport) {
       const items = req.result;
       if (items.length === 0) return resolve();
 
-      console.log(`מזהה ${items.length} תמונות לסנכרון... מתחיל העלאה ברקע.`);
+      console.log(`מזהה ${items.length} תמונות לסנכרון במבנה החדש...`);
 
       for (let item of items) {
         try {
-          // 1. העלאה ל-Storage
+          // 1. העלאה לענן
           const filename = `tour_${user.uid}_${item.timestamp}.jpg`;
           const storageRef = ref(storage, `images/${filename}`);
           await uploadBytes(storageRef, item.blob);
           const url = await getDownloadURL(storageRef);
 
-          // 2. עדכון Firestore
+          // 2. עדכון Firestore במבנה המאוחד (items)
           const reportRef = doc(db, "reports", item.reportId);
           const snap = await getDoc(reportRef);
           
@@ -57,21 +56,23 @@ export async function syncOfflineImages(user, activeReport, setActiveReport) {
             const gIndex = newGroups.findIndex(g => g.id === item.groupId);
             
             if (gIndex > -1) {
-              const imgIndex = newGroups[gIndex].images.indexOf(item.localUrl);
-              if (imgIndex > -1) {
-                newGroups[gIndex].images[imgIndex] = url;
+              // חיפוש התמונה בתוך מערך ה-items המאוחד
+              const itemIndex = newGroups[gIndex].items?.findIndex(i => i.type === 'image' && i.url === item.localUrl);
+              
+              if (itemIndex > -1) {
+                newGroups[gIndex].items[itemIndex].url = url; // עדכון הלינק לאמיתי
                 await updateDoc(reportRef, { groups: newGroups });
                 
-                // 3. עדכון ה-UI בזמן אמת (אם זה הדוח הפתוח כרגע)
+                // 3. עדכון ה-UI בזמן אמת אם המשתמש צופה בדו"ח
                 if (activeReport && activeReport.id === item.reportId && setActiveReport) {
                   setActiveReport(prev => {
                     if (!prev) return prev;
                     let updatedReport = JSON.parse(JSON.stringify(prev));
                     const liveGIndex = updatedReport.groups.findIndex(g => g.id === item.groupId);
                     if (liveGIndex > -1) {
-                      const liveImgIndex = updatedReport.groups[liveGIndex].images.indexOf(item.localUrl);
-                      if (liveImgIndex > -1) {
-                        updatedReport.groups[liveGIndex].images[liveImgIndex] = url;
+                      const liveItemIdx = updatedReport.groups[liveGIndex].items?.findIndex(i => i.type === 'image' && i.url === item.localUrl);
+                      if (liveItemIdx > -1) {
+                        updatedReport.groups[liveGIndex].items[liveItemIdx].url = url;
                       }
                     }
                     return updatedReport;
@@ -81,15 +82,13 @@ export async function syncOfflineImages(user, activeReport, setActiveReport) {
             }
           }
           
-          // 4. ניקוי מהטלפון
+          // 4. ניקוי מהמכשיר
           const delTx = database.transaction(STORE_NAME, 'readwrite');
           delTx.objectStore(STORE_NAME).delete(item.id);
-          
-          // שחרור כתובת הזיכרון הזמנית
           URL.revokeObjectURL(item.localUrl);
           
         } catch (e) { 
-          console.error("שגיאה בסנכרון פריט", e); 
+          console.error("שגיאה בסנכרון פריט מאוחד", e); 
         }
       }
       resolve();
