@@ -11,8 +11,10 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
   const [groupTextNote, setGroupTextNote] = useState('');
   
   const [editingNote, setEditingNote] = useState(null);
+  
+  // מנוע גרירה חדש ומתוקן
   const draggedItemRef = useRef(null); 
-  const [dragOverInfo, setDragOverInfo] = useState(null); // { groupId, itemIndex, isOverImage }
+  const [dragOverIndex, setDragOverIndex] = useState(null);
   
   const [editingGroupTitle, setEditingGroupTitle] = useState(null);
   const [editGroupTitleText, setEditGroupTitleText] = useState('');
@@ -63,8 +65,8 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     const gIndex = newGroups.findIndex(g => g.id === groupId);
     if (gIndex > -1 && newGroups[gIndex].items[itemIndex].type === 'image') {
       const noteText = newGroups[gIndex].items[itemIndex].note;
-      newGroups[gIndex].items[itemIndex].note = ''; // ניקוי מהתמונה
-      newGroups[gIndex].items.splice(itemIndex + 1, 0, { id: `note_${Date.now()}`, type: 'note', text: noteText }); // הפיכה להערה עצמאית
+      newGroups[gIndex].items[itemIndex].note = '';
+      newGroups[gIndex].items.splice(itemIndex + 1, 0, { id: `note_${Date.now()}`, type: 'note', text: noteText });
       const updatedReport = { ...activeReport, groups: newGroups, updatedAt: new Date().toISOString() };
       setActiveReport(updatedReport);
       if (isOnline) await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, updatedAt: updatedReport.updatedAt });
@@ -76,6 +78,7 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     let newGroups = JSON.parse(JSON.stringify(activeReport.groups || []));
     const gIndex = newGroups.findIndex(g => g.id === groupId);
     if (gIndex > -1) {
+      if (!newGroups[gIndex].items) newGroups[gIndex].items = [];
       newGroups[gIndex].items.push({ id: `note_${Date.now()}`, type: 'note', text: groupTextNote.trim() });
       const updatedReport = { ...activeReport, groups: newGroups, updatedAt: new Date().toISOString() };
       setActiveReport(updatedReport);
@@ -84,23 +87,73 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     }
   };
 
-  // === Drag & Drop Unified Logic ===
+  // === מנוע גרירה מתוקן ===
   const handleDragStart = (e, sourceGroupId, index) => {
     draggedItemRef.current = { sourceGroupId, index };
-    if(e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; }
+    if(e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
   };
 
-  const handleDragOver = (e, targetGroupId, targetIndex, isOverImage) => {
+  const handleItemDragEnter = (e, groupId, index) => {
+    e.stopPropagation();
     e.preventDefault();
-    setDragOverInfo({ groupId: targetGroupId, index: targetIndex, isOverImage });
+    setDragOverIndex(`${groupId}_${index}`);
   };
 
-  const handleDrop = async (e, targetGroupId) => {
+  const handleContainerDragEnter = (e, groupId) => {
     e.preventDefault();
+    setDragOverIndex(`${groupId}_container`);
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+  };
+
+  const handleItemDrop = async (e, targetGroupId, targetIndex, isOverImage) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setDragOverIndex(null);
+
     const source = draggedItemRef.current;
-    const target = dragOverInfo;
-    setDragOverInfo(null);
-    if (!source || !target) return;
+    if (!source) return;
+
+    let newGroups = JSON.parse(JSON.stringify(activeReport.groups || []));
+    const sGIdx = newGroups.findIndex(g => g.id === source.sourceGroupId);
+    const tGIdx = newGroups.findIndex(g => g.id === targetGroupId);
+
+    if (sGIdx === -1 || tGIdx === -1) return;
+
+    // הוצאת הפריט שנגרר (וחישוב מחדש של מיקום היעד)
+    const [draggedItem] = newGroups[sGIdx].items.splice(source.index, 1);
+    
+    let adjustedTargetIndex = targetIndex;
+    if (source.sourceGroupId === targetGroupId && source.index < targetIndex) {
+      adjustedTargetIndex -= 1;
+    }
+
+    // אם גררנו טקסט על גבי תמונה - נצמיד אותם
+    if (draggedItem.type === 'note' && isOverImage) {
+      const targetItem = newGroups[tGIdx].items[adjustedTargetIndex];
+      if (targetItem && targetItem.type === 'image') {
+        targetItem.note = (targetItem.note ? targetItem.note + " " : "") + draggedItem.text;
+      } else {
+        newGroups[tGIdx].items.splice(adjustedTargetIndex, 0, draggedItem);
+      }
+    } else {
+      // אחרת, סתם נשנה את המיקום שלו
+      newGroups[tGIdx].items.splice(adjustedTargetIndex, 0, draggedItem);
+    }
+
+    const updatedReport = { ...activeReport, groups: newGroups, updatedAt: new Date().toISOString() };
+    setActiveReport(updatedReport);
+    draggedItemRef.current = null;
+    if (isOnline) await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, updatedAt: updatedReport.updatedAt });
+  };
+
+  const handleContainerDrop = async (e, targetGroupId) => {
+    e.preventDefault();
+    setDragOverIndex(null);
+    const source = draggedItemRef.current;
+    if (!source) return;
 
     let newGroups = JSON.parse(JSON.stringify(activeReport.groups || []));
     const sGIdx = newGroups.findIndex(g => g.id === source.sourceGroupId);
@@ -108,22 +161,12 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     if (sGIdx === -1 || tGIdx === -1) return;
 
     const [draggedItem] = newGroups[sGIdx].items.splice(source.index, 1);
-
-    // לוגיקת הצמדה: אם גררנו טקסט על תמונה
-    if (draggedItem.type === 'note' && target.isOverImage) {
-      const targetItem = newGroups[tGIdx].items[target.index];
-      if (targetItem.type === 'image') {
-        targetItem.note = (targetItem.note ? targetItem.note + " " : "") + draggedItem.text;
-      } else {
-        newGroups[tGIdx].items.splice(target.index, 0, draggedItem);
-      }
-    } else {
-      // גרירה רגילה לשינוי סדר
-      newGroups[tGIdx].items.splice(target.index, 0, draggedItem);
-    }
+    if (!newGroups[tGIdx].items) newGroups[tGIdx].items = [];
+    newGroups[tGIdx].items.push(draggedItem);
 
     const updatedReport = { ...activeReport, groups: newGroups, updatedAt: new Date().toISOString() };
     setActiveReport(updatedReport);
+    draggedItemRef.current = null;
     if (isOnline) await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, updatedAt: updatedReport.updatedAt });
   };
 
@@ -142,7 +185,7 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
 
   const renderItem = (item, index, groupId) => {
     const isEditing = editingNote?.groupId === groupId && editingNote?.index === index;
-    const isDragOver = dragOverInfo?.groupId === groupId && dragOverInfo?.index === index;
+    const isDragOver = dragOverIndex === `${groupId}_${index}`;
 
     if (item.type === 'image') {
       return (
@@ -150,10 +193,12 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
           key={item.id} 
           draggable 
           onDragStart={(e) => handleDragStart(e, groupId, index)}
-          onDragOver={(e) => handleDragOver(e, groupId, index, true)}
+          onDragEnter={(e) => handleItemDragEnter(e, groupId, index)}
+          onDragOver={handleDragOver}
+          onDrop={(e) => handleItemDrop(e, groupId, index, true)}
           style={{ ...draggableImgWrapperStyle, border: isDragOver ? '3px solid #3498db' : '2px solid transparent' }}
         >
-          <img src={item.url} style={draggableImgStyle} alt="store item" />
+          <img src={item.url || item.localUrl} style={draggableImgStyle} alt="store item" />
           <button onClick={() => deleteItem(groupId, index)} style={deleteImgOverlayBtnStyle}><X size={14}/></button>
           {item.note && (
             <div style={attachedNoteBadgeStyle}>
@@ -171,7 +216,9 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
         key={item.id} 
         draggable 
         onDragStart={(e) => handleDragStart(e, groupId, index)}
-        onDragOver={(e) => handleDragOver(e, groupId, index, false)}
+        onDragEnter={(e) => handleItemDragEnter(e, groupId, index)}
+        onDragOver={handleDragOver}
+        onDrop={(e) => handleItemDrop(e, groupId, index, false)}
         style={{ ...draggableNoteStyle, borderTop: isDragOver ? '4px solid #3498db' : 'none' }}
       >
         <GripVertical size={16} color="#bdc3c7" style={{cursor: 'grab'}} />
@@ -226,9 +273,10 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
       {(activeReport.groups || []).map((group) => (
         <div 
           key={group.id} 
-          onDrop={(e) => handleDrop(e, group.id)} 
-          onDragOver={(e) => e.preventDefault()}
-          style={{ ...groupZoneStyle, border: dragOverInfo?.groupId === group.id ? '2px dashed #3498db' : '1px solid transparent' }}
+          onDragEnter={(e) => handleContainerDragEnter(e, group.id)}
+          onDragOver={handleDragOver}
+          onDrop={(e) => handleContainerDrop(e, group.id)}
+          style={{ ...groupZoneStyle, border: dragOverIndex === `${group.id}_container` ? '2px dashed #3498db' : '1px solid transparent' }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #eee', paddingBottom: '10px', marginBottom: '15px' }}>
             {editingGroupTitle === group.id ? (
@@ -282,12 +330,12 @@ const miniActionBtnStyle = { background: '#f0f3f4', border: 'none', borderRadius
 const addGroupBtnStyle = { display: 'flex', alignItems: 'center', gap: '5px', padding: '10px 15px', backgroundColor: '#9b59b6', color: 'white', border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: 'bold' };
 const genBtnStyle = { display: 'flex', alignItems: 'center', gap: '5px', padding: '10px 15px', backgroundColor: '#3498db', color: 'white', border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: 'bold' };
 const backBtnStyle = { border: 'none', background: 'none', color: '#3498db', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '5px' };
-const draggableNoteStyle = { display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '12px', backgroundColor: '#fcfcfc', borderRadius: '10px', borderRight: '4px solid #3498db', width: '100%', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' };
+const draggableNoteStyle = { display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '12px', backgroundColor: '#fcfcfc', borderRadius: '10px', width: '100%', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' };
 const draggableImgWrapperStyle = { cursor: 'grab', position: 'relative', borderRadius: '10px', overflow: 'hidden', width: '100px', height: '100px' };
 const draggableImgStyle = { width: '100%', height: '100%', objectFit: 'cover' };
 const deleteImgOverlayBtnStyle = { position: 'absolute', top: '4px', right: '4px', backgroundColor: 'rgba(231, 76, 60, 0.9)', color: 'white', border: 'none', borderRadius: '50%', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' };
-const editIconBtnStyle = { background: 'none', border: 'none', color: '#95a5a6', padding: '5px' };
-const deleteIconBtnStyle = { background: 'none', border: 'none', padding: '5px' };
+const editIconBtnStyle = { background: 'none', border: 'none', color: '#95a5a6', padding: '5px', cursor: 'pointer' };
+const deleteIconBtnStyle = { background: 'none', border: 'none', padding: '5px', cursor: 'pointer' };
 const editInputStyle = { flex: 1, padding: '8px', borderRadius: '8px', border: '1px solid #ddd' };
-const saveEditBtnStyle = { backgroundColor: '#2ecc71', color: 'white', border: 'none', borderRadius: '8px', padding: '0 12px' };
-const cancelMiniBtnStyle = { backgroundColor: '#e74c3c', color: 'white', border: 'none', borderRadius: '8px', padding: '0 12px' };
+const saveEditBtnStyle = { backgroundColor: '#2ecc71', color: 'white', border: 'none', borderRadius: '8px', padding: '0 12px', cursor: 'pointer' };
+const cancelMiniBtnStyle = { backgroundColor: '#e74c3c', color: 'white', border: 'none', borderRadius: '8px', padding: '0 12px', cursor: 'pointer' };
