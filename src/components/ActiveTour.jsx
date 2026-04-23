@@ -7,7 +7,6 @@ import AnnotationModal from './AnnotationModal';
 export default function ActiveTour({ user, isOnline, activeReport, setActiveReport, setView, closeTour }) {
   const [isUploading, setIsUploading] = useState(false);
   
-  // מעקב אחרי הקבוצה הספציפית שבה אנחנו פועלים עכשיו
   const [targetGroupId, setTargetGroupId] = useState(null);
   const [recordingGroupId, setRecordingGroupId] = useState(null);
   const [addingTextGroupId, setAddingTextGroupId] = useState(null);
@@ -52,7 +51,32 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     if (isOnline) await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, updatedAt: updatedReport.updatedAt });
   };
 
-  // הקלטה ישירות לקבוצה הספציפית
+  // --- פונקציות המחיקה החדשות ---
+  const deleteNote = async (groupId, noteIndex) => {
+    if (!window.confirm("למחוק הערה זו?")) return;
+    let newGroups = JSON.parse(JSON.stringify(activeReport.groups || []));
+    const gIndex = newGroups.findIndex(g => g.id === groupId);
+    if (gIndex > -1) {
+      newGroups[gIndex].notes.splice(noteIndex, 1);
+      const updatedReport = { ...activeReport, groups: newGroups, updatedAt: new Date().toISOString() };
+      setActiveReport(updatedReport);
+      if (isOnline) await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, updatedAt: updatedReport.updatedAt });
+    }
+  };
+
+  const deleteImage = async (groupId, imgIndex) => {
+    if (!window.confirm("למחוק תמונה זו?")) return;
+    let newGroups = JSON.parse(JSON.stringify(activeReport.groups || []));
+    const gIndex = newGroups.findIndex(g => g.id === groupId);
+    if (gIndex > -1) {
+      newGroups[gIndex].images.splice(imgIndex, 1);
+      const updatedReport = { ...activeReport, groups: newGroups, updatedAt: new Date().toISOString() };
+      setActiveReport(updatedReport);
+      if (isOnline) await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, updatedAt: updatedReport.updatedAt });
+    }
+  };
+  // --------------------------------
+
   const startRecording = (groupId) => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) return alert("הדפדפן שלך לא תומך בהקלטה. השתמש בטקסט חופשי.");
@@ -76,7 +100,6 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     recognition.start();
   };
 
-  // הוספת טקסט ישירות לקבוצה הספציפית
   const handleAddGroupText = async (groupId) => {
     if (!groupTextNote.trim()) { setAddingTextGroupId(null); return; }
     let newGroups = JSON.parse(JSON.stringify(activeReport.groups || []));
@@ -91,7 +114,6 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     }
   };
 
-  // === Drag & Drop Logic (עודכן כדי לתמוך רק בקבוצות) ===
   const handleDragStart = (e, sourceGroupId, type, index) => {
     draggedItemRef.current = { sourceGroupId, type, index };
     if(e.dataTransfer) { e.dataTransfer.setData('text/plain', type); e.dataTransfer.effectAllowed = 'move'; }
@@ -176,7 +198,10 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
         ) : (
           <>
             <span style={{ flex: 1, fontSize: '15px', lineHeight: '1.4' }}>{noteText}</span>
-            <button onClick={() => setEditingNote({ groupId, index, text: noteText })} style={editIconBtnStyle}><Edit2 size={16} /></button>
+            <div style={{ display: 'flex', gap: '5px' }}>
+              <button onClick={() => setEditingNote({ groupId, index, text: noteText })} style={editIconBtnStyle}><Edit2 size={16} /></button>
+              <button onClick={() => deleteNote(groupId, index)} style={deleteIconBtnStyle}><Trash2 size={16} color="#e74c3c" /></button>
+            </div>
           </>
         )}
       </div>
@@ -185,7 +210,6 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
 
   const getGroupZoneStyle = (isHovered) => ({ display: 'flex', flexDirection: 'column', gap: '15px', padding: '20px', backgroundColor: isHovered ? '#ebf5fb' : 'white', borderRadius: '15px', marginBottom: '25px', boxShadow: isHovered ? '0 8px 25px rgba(52, 152, 219, 0.2)' : '0 2px 8px rgba(0,0,0,0.05)', border: isHovered ? '3px dashed #3498db' : '3px solid transparent', transition: 'all 0.2s ease', minHeight: '180px' });
 
-  // === RENDER ===
   if (isAnnotating) {
     return (
       <AnnotationModal 
@@ -197,7 +221,7 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
         setIsUploading={setIsUploading}
         activeReport={activeReport}
         setActiveReport={setActiveReport}
-        targetGroupId={targetGroupId} // העברת מזהה הקבוצה הספציפית
+        targetGroupId={targetGroupId}
       />
     );
   }
@@ -219,9 +243,6 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
         </div>
       </div>
 
-      {/* אזור חופשי נמחק לחלוטין מכאן */}
-
-      {/* IMAGE GROUPS ZONE */}
       {(activeReport.groups || []).map((group) => (
         <div 
           key={group.id} 
@@ -244,7 +265,6 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
               </div>
             )}
 
-            {/* אייקוני הפעולות החדשים של הקבוצה */}
             <div style={{ display: 'flex', gap: '6px' }}>
               <button 
                 onClick={() => { setTargetGroupId(group.id); fileInputRef.current.click(); }} 
@@ -271,7 +291,6 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
             </div>
           </div>
 
-          {/* תיבת הקלדת טקסט של הקבוצה (מופיעה רק כשיש לחיצה) */}
           {addingTextGroupId === group.id && (
             <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
               <input type="text" value={groupTextNote} onChange={(e) => setGroupTextNote(e.target.value)} placeholder="הקלד הערה לקבוצה זו..." style={editInputStyle} autoFocus />
@@ -287,9 +306,16 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
                 draggable 
                 onDragStart={(e) => handleDragStart(e, group.id, 'image', i)} 
                 onDragEnd={handleDragEnd}
-                style={draggableImgWrapperStyle}
+                style={{ ...draggableImgWrapperStyle, position: 'relative' }}
               >
                 <img src={imgUrl} style={draggableImgStyle} alt="group item" />
+                <button 
+                  onClick={(e) => { e.stopPropagation(); deleteImage(group.id, i); }} 
+                  style={deleteImgOverlayBtnStyle}
+                  title="מחק תמונה"
+                >
+                  <X size={14} strokeWidth={3} />
+                </button>
               </div>
             ))}
           </div>
@@ -325,6 +351,27 @@ const draggableNoteStyle = { display: 'flex', alignItems: 'flex-start', gap: '10
 const draggableImgWrapperStyle = { cursor: 'grab', display: 'inline-block', borderRadius: '8px', overflow: 'hidden', border: '2px solid transparent', boxShadow: '0 2px 5px rgba(0,0,0,0.1)', touchAction: 'none' };
 const draggableImgStyle = { width: '80px', height: '80px', objectFit: 'cover', display: 'block', pointerEvents: 'none' };
 const editIconBtnStyle = { background: 'none', border: 'none', color: '#95a5a6', cursor: 'pointer', padding: '5px' };
+const deleteIconBtnStyle = { background: 'none', border: 'none', cursor: 'pointer', padding: '5px', display: 'flex', alignItems: 'center' };
 const editInputStyle = { flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid #bdc3c7', fontFamily: 'Arial' };
 const saveEditBtnStyle = { backgroundColor: '#2ecc71', color: 'white', border: 'none', borderRadius: '8px', padding: '0 15px', cursor: 'pointer' };
 const cancelMiniBtnStyle = { backgroundColor: '#e74c3c', color: 'white', border: 'none', borderRadius: '8px', padding: '0 15px', cursor: 'pointer' };
+
+// עיצוב לכפתור המחיקה שיושב על התמונה
+const deleteImgOverlayBtnStyle = {
+  position: 'absolute',
+  top: '4px',
+  right: '4px',
+  backgroundColor: 'rgba(231, 76, 60, 0.9)',
+  color: 'white',
+  border: 'none',
+  borderRadius: '50%',
+  width: '24px',
+  height: '24px',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  cursor: 'pointer',
+  padding: 0,
+  boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+  zIndex: 10
+};
