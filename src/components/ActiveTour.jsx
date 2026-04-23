@@ -7,11 +7,9 @@ import AnnotationModal from './AnnotationModal';
 export default function ActiveTour({ user, isOnline, activeReport, setActiveReport, setView, closeTour }) {
   const [isUploading, setIsUploading] = useState(false);
   const [targetGroupId, setTargetGroupId] = useState(null);
-  const [addingTextGroupId, setAddingTextGroupId] = useState(null);
-  const [groupTextNote, setGroupTextNote] = useState('');
   
-  // ניהול עריכת טקסט בחלון גדול
-  const [editingNote, setEditingNote] = useState(null); // { groupId, index, text }
+  // ניהול עריכה והוספת טקסט בחלון גדול (Modal)
+  const [editingNote, setEditingNote] = useState(null); // { groupId, index, text } (index -1 means new note)
   
   const draggedItemRef = useRef(null); 
   const longPressTimer = useRef(null);
@@ -71,20 +69,6 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
       newGroups[gIndex].items.splice(itemIndex + 1, 0, { id: `note_${Date.now()}`, type: 'note', text: noteText });
       const updatedReport = { ...activeReport, groups: newGroups, updatedAt: new Date().toISOString() };
       setActiveReport(updatedReport);
-      if (isOnline) await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, updatedAt: updatedReport.updatedAt });
-    }
-  };
-
-  const handleAddGroupText = async (groupId) => {
-    if (!groupTextNote.trim()) { setAddingTextGroupId(null); return; }
-    let newGroups = JSON.parse(JSON.stringify(activeReport.groups || []));
-    const gIndex = newGroups.findIndex(g => g.id === groupId);
-    if (gIndex > -1) {
-      if (!newGroups[gIndex].items) newGroups[gIndex].items = [];
-      newGroups[gIndex].items.push({ id: `note_${Date.now()}`, type: 'note', text: groupTextNote.trim() });
-      const updatedReport = { ...activeReport, groups: newGroups, updatedAt: new Date().toISOString() };
-      setActiveReport(updatedReport);
-      setGroupTextNote(''); setAddingTextGroupId(null);
       if (isOnline) await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, updatedAt: updatedReport.updatedAt });
     }
   };
@@ -195,14 +179,26 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     if(e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
   };
 
+  // שמירה מאוחדת להערה חדשה או עריכה קיימת
   const saveNoteEdit = async () => {
+    if (!editingNote.text.trim()) { setEditingNote(null); return; }
+    
     let newGroups = JSON.parse(JSON.stringify(activeReport.groups || []));
     const gIndex = newGroups.findIndex(g => g.id === editingNote.groupId);
+    
     if (gIndex > -1) {
-      const item = newGroups[gIndex].items[editingNote.index];
-      if (item.type === 'note') item.text = editingNote.text;
-      else if (item.type === 'image') item.note = editingNote.text;
+      if (editingNote.index === -1) {
+        // הוספת הערה חדשה
+        if (!newGroups[gIndex].items) newGroups[gIndex].items = [];
+        newGroups[gIndex].items.push({ id: `note_${Date.now()}`, type: 'note', text: editingNote.text.trim() });
+      } else {
+        // עריכת הערה קיימת
+        const item = newGroups[gIndex].items[editingNote.index];
+        if (item.type === 'note') item.text = editingNote.text.trim();
+        else if (item.type === 'image') item.note = editingNote.text.trim();
+      }
     }
+    
     const updatedReport = { ...activeReport, groups: newGroups, updatedAt: new Date().toISOString() };
     setActiveReport(updatedReport); setEditingNote(null);
     if (isOnline) await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, updatedAt: updatedReport.updatedAt });
@@ -316,17 +312,12 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
               <button onClick={() => { setTargetGroupId(group.id); fileInputRef.current.click(); }} style={miniActionBtnStyle}>
                 {isUploading && targetGroupId === group.id ? <Loader className="spin" size={16} /> : <Camera size={16} color="#34495e" />}
               </button>
-              <button onClick={() => setAddingTextGroupId(group.id)} style={miniActionBtnStyle}><FileText size={16} color="#34495e" /></button>
+              {/* כפתור הוספת הערה עכשיו פותח את החלון הגדול */}
+              <button onClick={() => setEditingNote({ groupId: group.id, index: -1, text: '' })} style={miniActionBtnStyle} title="הוסף הערה לקבוצה זו">
+                <FileText size={16} color="#34495e" />
+              </button>
             </div>
           </div>
-
-          {addingTextGroupId === group.id && (
-            <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
-              <input type="text" value={groupTextNote} onChange={(e) => setGroupTextNote(e.target.value)} placeholder="הקלד הערה..." style={editInputStyle} autoFocus />
-              <button onClick={() => handleAddGroupText(group.id)} style={saveEditBtnStyle}><Check size={20} /></button>
-              <button onClick={() => setAddingTextGroupId(null)} style={cancelMiniBtnStyle}><X size={20} /></button>
-            </div>
-          )}
 
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
             {(group.items || []).map((item, i) => renderItem(item, i, group.id))}
@@ -334,22 +325,23 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
         </div>
       ))}
 
-      {/* חלון עריכה גדול (Modal) */}
+      {/* חלון עריכה/הוספה גדול (Modal) */}
       {editingNote && (
         <div style={fullModalOverlayStyle}>
           <div style={fullModalContentStyle}>
             <div style={fullModalHeaderStyle}>
-              <h3 style={{ margin: 0 }}>עריכת הערה</h3>
+              <h3 style={{ margin: 0 }}>{editingNote.index === -1 ? 'הוספת הערה חדשה' : 'עריכת הערה'}</h3>
               <button onClick={() => setEditingNote(null)} style={{ background: 'none', border: 'none' }}><X size={24} /></button>
             </div>
             <textarea 
               value={editingNote.text} 
               onChange={(e) => setEditingNote({...editingNote, text: e.target.value})} 
               style={fullModalTextareaStyle}
+              placeholder="הקלד כאן או השתמש במיקרופון המקלדת..."
               autoFocus
             />
             <button onClick={saveNoteEdit} style={fullModalSaveBtnStyle}>
-              <Save size={20} /> שמור שינויים
+              <Save size={20} /> {editingNote.index === -1 ? 'הוסף הערה' : 'שמור שינויים'}
             </button>
           </div>
         </div>
@@ -370,7 +362,7 @@ const attachedNoteBadgeStyle = { position: 'absolute', bottom: 0, left: 0, right
 const attachedNoteTextStyle = { flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
 const detachBtnStyle = { background: 'none', border: 'none', color: '#3498db', padding: '2px' };
 const editNoteOnImgStyle = { background: 'none', border: 'none', color: '#f1c40f', padding: '2px' };
-const miniActionBtnStyle = { background: '#f0f3f4', border: 'none', borderRadius: '8px', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center' };
+const miniActionBtnStyle = { background: '#f0f3f4', border: 'none', borderRadius: '8px', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' };
 const addGroupBtnStyle = { display: 'flex', alignItems: 'center', gap: '5px', padding: '10px 15px', backgroundColor: '#9b59b6', color: 'white', border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: 'bold' };
 const genBtnStyle = { display: 'flex', alignItems: 'center', gap: '5px', padding: '10px 15px', backgroundColor: '#3498db', color: 'white', border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: 'bold' };
 const backBtnStyle = { border: 'none', background: 'none', color: '#3498db', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '5px' };
@@ -378,8 +370,8 @@ const draggableNoteStyle = { display: 'flex', alignItems: 'flex-start', gap: '10
 const draggableImgWrapperStyle = { cursor: 'grab', position: 'relative', borderRadius: '10px', overflow: 'hidden', width: '100px', height: '100px', touchAction: 'pan-y' };
 const draggableImgStyle = { width: '100%', height: '100%', objectFit: 'cover' };
 const deleteImgOverlayBtnStyle = { position: 'absolute', top: '4px', right: '4px', backgroundColor: 'rgba(231, 76, 60, 0.9)', color: 'white', border: 'none', borderRadius: '50%', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' };
-const editIconBtnStyle = { background: 'none', border: 'none', color: '#95a5a6', padding: '5px' };
-const deleteIconBtnStyle = { background: 'none', border: 'none', padding: '5px' };
+const editIconBtnStyle = { background: 'none', border: 'none', color: '#95a5a6', padding: '5px', cursor: 'pointer' };
+const deleteIconBtnStyle = { background: 'none', border: 'none', padding: '5px', cursor: 'pointer' };
 const editInputStyle = { flex: 1, padding: '8px', borderRadius: '8px', border: '1px solid #ddd' };
-const saveEditBtnStyle = { backgroundColor: '#2ecc71', color: 'white', border: 'none', borderRadius: '8px', padding: '0 12px' };
-const cancelMiniBtnStyle = { backgroundColor: '#e74c3c', color: 'white', border: 'none', borderRadius: '8px', padding: '0 12px' };
+const saveEditBtnStyle = { backgroundColor: '#2ecc71', color: 'white', border: 'none', borderRadius: '8px', padding: '0 12px', cursor: 'pointer' };
+const cancelMiniBtnStyle = { backgroundColor: '#e74c3c', color: 'white', border: 'none', borderRadius: '8px', padding: '0 12px', cursor: 'pointer' };
