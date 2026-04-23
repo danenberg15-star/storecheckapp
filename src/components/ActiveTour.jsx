@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { Camera, FileText, Loader, Edit2, Check, ArrowRight, GripVertical, Plus, Trash2, X, Link } from 'lucide-react';
+import { Camera, FileText, Loader, Edit2, Check, ArrowRight, GripVertical, Plus, Trash2, X, Link, Save } from 'lucide-react';
 import { db } from '../firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import AnnotationModal from './AnnotationModal';
@@ -10,14 +10,14 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
   const [addingTextGroupId, setAddingTextGroupId] = useState(null);
   const [groupTextNote, setGroupTextNote] = useState('');
   
-  const [editingNote, setEditingNote] = useState(null);
+  // ניהול עריכת טקסט בחלון גדול
+  const [editingNote, setEditingNote] = useState(null); // { groupId, index, text }
   
-  // מנוע גרירה ולחיצה ארוכה
   const draggedItemRef = useRef(null); 
   const longPressTimer = useRef(null);
   const touchStartPos = useRef({ x: 0, y: 0 });
   const [dragOverIndex, setDragOverIndex] = useState(null);
-  const [primedItemId, setPrimedItemId] = useState(null); // מזהה הפריט שנלחץ ארוכות
+  const [primedItemId, setPrimedItemId] = useState(null);
 
   const [editingGroupTitle, setEditingGroupTitle] = useState(null);
   const [editGroupTitleText, setEditGroupTitleText] = useState('');
@@ -89,6 +89,7 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     }
   };
 
+  // === מנוע גרירה ומיקום ===
   const executeDrop = async (sourceGroupId, sourceIndex, targetGroupId, targetIndex, isOverImage) => {
     let newGroups = JSON.parse(JSON.stringify(activeReport.groups || []));
     const sGIdx = newGroups.findIndex(g => g.id === sourceGroupId);
@@ -130,30 +131,25 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     if (isOnline) await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, updatedAt: updatedReport.updatedAt });
   };
 
-  // === לוגיקת לחיצה ארוכה ומגע ===
+  // === מגע ולחיצה ארוכה ===
   const handleTouchStart = (e, sourceGroupId, index, itemId) => {
     const touch = e.touches[0];
     touchStartPos.current = { x: touch.clientX, y: touch.clientY };
-    
-    // התחלת טיימר של חצי שנייה
     longPressTimer.current = setTimeout(() => {
       setPrimedItemId(itemId);
       draggedItemRef.current = { sourceGroupId, index };
-      if (window.navigator.vibrate) window.navigator.vibrate(50); // רטט קל לאישור
+      if (window.navigator.vibrate) window.navigator.vibrate(50);
     }, 500);
   };
 
   const handleTouchMove = (e) => {
     const touch = e.touches[0];
-    
-    // אם המשתמש מזיז את האצבע לפני תום ה-500ms, נבטל את הגרירה כדי לאפשר גלילה
     if (!primedItemId) {
       const dist = Math.sqrt(Math.pow(touch.clientX - touchStartPos.current.x, 2) + Math.pow(touch.clientY - touchStartPos.current.y, 2));
       if (dist > 10) clearTimeout(longPressTimer.current);
       return;
     }
-
-    e.preventDefault(); // מניעת גלילה בזמן גרירה פעילה
+    e.preventDefault();
     const element = document.elementFromPoint(touch.clientX, touch.clientY);
     if (element) {
        const dropZone = element.closest('[data-droppable="true"]');
@@ -172,10 +168,8 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
   const handleTouchEnd = async (e) => {
     clearTimeout(longPressTimer.current);
     if (!primedItemId) return;
-
     const touch = e.changedTouches[0];
     const element = document.elementFromPoint(touch.clientX, touch.clientY);
-
     if (element) {
        const dropZone = element.closest('[data-droppable="true"]');
        if (dropZone) {
@@ -191,13 +185,11 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
           }
        }
     }
-
     setDragOverIndex(null);
     setPrimedItemId(null);
     draggedItemRef.current = null;
   };
 
-  // מחשב תמיכה (עכבר) - נשאר מיידי או ניתן להוסיף לוגיקה דומה
   const handleDragStart = (e, sourceGroupId, index) => {
     draggedItemRef.current = { sourceGroupId, index };
     if(e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
@@ -217,7 +209,6 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
   };
 
   const renderItem = (item, index, groupId) => {
-    const isEditing = editingNote?.groupId === groupId && editingNote?.index === index;
     const isDragOver = dragOverIndex === `${groupId}_${index}`;
     const isPrimed = primedItemId === item.id;
 
@@ -262,26 +253,30 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     return (
       <div {...commonProps} style={{ ...draggableNoteStyle, ...itemStyle, borderTop: isDragOver ? '4px solid #3498db' : 'none' }}>
         <GripVertical size={16} color="#bdc3c7" style={{cursor: 'grab'}} />
-        {isEditing ? (
-          <div style={{ display: 'flex', gap: '10px', width: '100%', alignItems: 'center' }}>
-            <textarea value={editingNote.text} onChange={(e) => setEditingNote({...editingNote, text: e.target.value})} style={editInputStyle} rows={2} />
-            <button onClick={saveNoteEdit} style={saveEditBtnStyle}><Check size={20} /></button>
-          </div>
-        ) : (
-          <>
-            <span style={{ flex: 1, fontSize: '15px' }}>{item.text}</span>
-            <div style={{ display: 'flex', gap: '5px' }}>
-              <button onClick={() => setEditingNote({ groupId, index, text: item.text })} style={editIconBtnStyle}><Edit2 size={16} /></button>
-              <button onClick={() => deleteItem(groupId, index)} style={deleteIconBtnStyle}><Trash2 size={16} color="#e74c3c" /></button>
-            </div>
-          </>
-        )}
+        <span style={{ flex: 1, fontSize: '15px' }}>{item.text}</span>
+        <div style={{ display: 'flex', gap: '5px' }}>
+          <button onClick={() => setEditingNote({ groupId, index, text: item.text })} style={editIconBtnStyle}><Edit2 size={16} /></button>
+          <button onClick={() => deleteItem(groupId, index)} style={deleteIconBtnStyle}><Trash2 size={16} color="#e74c3c" /></button>
+        </div>
       </div>
     );
   };
 
+  const saveGroupTitle = async (groupId) => {
+    let newGroups = JSON.parse(JSON.stringify(activeReport.groups || []));
+    const gIndex = newGroups.findIndex(g => g.id === groupId);
+    if (gIndex > -1) newGroups[gIndex].title = editGroupTitleText;
+    const updatedReport = { ...activeReport, groups: newGroups, updatedAt: new Date().toISOString() };
+    setActiveReport(updatedReport); setEditingGroupTitle(null);
+    if (isOnline) await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, updatedAt: updatedReport.updatedAt });
+  };
+
+  if (isAnnotating) {
+    return <AnnotationModal user={user} isOnline={isOnline} pendingPhoto={pendingPhoto} setPendingPhoto={setPendingPhoto} setIsAnnotating={setIsAnnotating} setIsUploading={setIsUploading} activeReport={activeReport} setActiveReport={setActiveReport} targetGroupId={targetGroupId} />;
+  }
+
   return (
-    <div>
+    <div style={{ position: 'relative' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <button onClick={closeTour} style={backBtnStyle}><ArrowRight size={20} /> חזרה</button>
         <h2 style={{ margin: 0, fontSize: '18px', color: '#2c3e50' }}>{activeReport.title}</h2>
@@ -305,9 +300,18 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
           onDrop={(e) => executeContainerDrop(draggedItemRef.current.sourceGroupId, draggedItemRef.current.index, group.id)}
           style={{ ...groupZoneStyle, border: dragOverIndex === `${group.id}_container` ? '2px dashed #3498db' : '1px solid transparent' }}
         >
-          {/* Header ופעולות קבוצה נשארו ללא שינוי */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #eee', paddingBottom: '10px', marginBottom: '15px' }}>
-            <h3 style={{ margin: 0, color: '#2c3e50', fontSize: '18px', fontWeight: 'bold' }}>{group.title || 'קבוצה ללא שם'}</h3>
+            {editingGroupTitle === group.id ? (
+              <div style={{ display: 'flex', gap: '10px', flex: 1, alignItems: 'center' }}>
+                <input value={editGroupTitleText} onChange={e => setEditGroupTitleText(e.target.value)} style={editInputStyle} />
+                <button onClick={() => saveGroupTitle(group.id)} style={saveEditBtnStyle}><Check size={18} /></button>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
+                <h3 style={{ margin: 0, color: '#2c3e50', fontSize: '18px', fontWeight: 'bold' }}>{group.title || 'קבוצה ללא שם'}</h3>
+                <button onClick={() => { setEditingGroupTitle(group.id); setEditGroupTitleText(group.title || ''); }} style={editIconBtnStyle}><Edit2 size={14} /></button>
+              </div>
+            )}
             <div style={{ display: 'flex', gap: '6px' }}>
               <button onClick={() => { setTargetGroupId(group.id); fileInputRef.current.click(); }} style={miniActionBtnStyle}>
                 {isUploading && targetGroupId === group.id ? <Loader className="spin" size={16} /> : <Camera size={16} color="#34495e" />}
@@ -316,16 +320,51 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
             </div>
           </div>
 
+          {addingTextGroupId === group.id && (
+            <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
+              <input type="text" value={groupTextNote} onChange={(e) => setGroupTextNote(e.target.value)} placeholder="הקלד הערה..." style={editInputStyle} autoFocus />
+              <button onClick={() => handleAddGroupText(group.id)} style={saveEditBtnStyle}><Check size={20} /></button>
+              <button onClick={() => setAddingTextGroupId(null)} style={cancelMiniBtnStyle}><X size={20} /></button>
+            </div>
+          )}
+
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
             {(group.items || []).map((item, i) => renderItem(item, i, group.id))}
           </div>
         </div>
       ))}
+
+      {/* חלון עריכה גדול (Modal) */}
+      {editingNote && (
+        <div style={fullModalOverlayStyle}>
+          <div style={fullModalContentStyle}>
+            <div style={fullModalHeaderStyle}>
+              <h3 style={{ margin: 0 }}>עריכת הערה</h3>
+              <button onClick={() => setEditingNote(null)} style={{ background: 'none', border: 'none' }}><X size={24} /></button>
+            </div>
+            <textarea 
+              value={editingNote.text} 
+              onChange={(e) => setEditingNote({...editingNote, text: e.target.value})} 
+              style={fullModalTextareaStyle}
+              autoFocus
+            />
+            <button onClick={saveNoteEdit} style={fullModalSaveBtnStyle}>
+              <Save size={20} /> שמור שינויים
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-// Styles - נוסף touchAction: 'pan-y' כדי לאפשר גלילה אנכית רגילה אך למנוע הפרעה לגרירה
+// Styles
+const fullModalOverlayStyle = { position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 10000, padding: '20px', boxSizing: 'border-box' };
+const fullModalContentStyle = { backgroundColor: 'white', width: '100%', maxWidth: '500px', borderRadius: '15px', display: 'flex', flexDirection: 'column', padding: '20px', boxSizing: 'border-box', boxShadow: '0 10px 30px rgba(0,0,0,0.2)' };
+const fullModalHeaderStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', borderBottom: '1px solid #eee', paddingBottom: '10px' };
+const fullModalTextareaStyle = { width: '100%', minHeight: '200px', padding: '15px', borderRadius: '10px', border: '1px solid #ddd', fontSize: '16px', fontFamily: 'Arial', boxSizing: 'border-box', outline: 'none', resize: 'none' };
+const fullModalSaveBtnStyle = { marginTop: '20px', padding: '15px', backgroundColor: '#2ecc71', color: 'white', border: 'none', borderRadius: '10px', fontSize: '16px', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', cursor: 'pointer' };
+
 const groupZoneStyle = { display: 'flex', flexDirection: 'column', padding: '20px', backgroundColor: 'white', borderRadius: '15px', marginBottom: '25px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' };
 const attachedNoteBadgeStyle = { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(44, 62, 80, 0.85)', color: 'white', padding: '4px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' };
 const attachedNoteTextStyle = { flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
