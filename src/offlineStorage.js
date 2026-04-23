@@ -5,7 +5,6 @@ import { doc, getDoc, updateDoc } from 'firebase/firestore';
 const DB_NAME = 'StoreCheckOffline';
 const STORE_NAME = 'pendingImages';
 
-// פתיחת מסד נתונים מקומי בזיכרון הטלפון
 function getDB() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, 1);
@@ -15,7 +14,6 @@ function getDB() {
   });
 }
 
-// שמירת התמונה לתור המקומי כשאנחנו באופליין
 export async function saveImageOffline(reportId, groupId, blob, localUrl) {
   const db = await getDB();
   return new Promise((resolve, reject) => {
@@ -26,8 +24,8 @@ export async function saveImageOffline(reportId, groupId, blob, localUrl) {
   });
 }
 
-// פונקציית סנכרון הרקע - רצה אוטומטית ברגע שהאינטרנט חוזר
-export async function syncOfflineImages(user) {
+// עדכון פונקציית הסנכרון לתמיכה ב-Local First ועדכון UI חי
+export async function syncOfflineImages(user, activeReport, setActiveReport) {
   if (!user || !navigator.onLine) return;
   
   const database = await getDB();
@@ -39,23 +37,23 @@ export async function syncOfflineImages(user) {
       const items = req.result;
       if (items.length === 0) return resolve();
 
-      console.log(`מזהה ${items.length} תמונות ממתינות באופליין... מסנכרן לענן.`);
+      console.log(`מזהה ${items.length} תמונות לסנכרון... מתחיל העלאה ברקע.`);
 
       for (let item of items) {
         try {
-          // 1. העלאה לענן (Storage)
+          // 1. העלאה ל-Storage
           const filename = `tour_${user.uid}_${item.timestamp}.jpg`;
           const storageRef = ref(storage, `images/${filename}`);
           await uploadBytes(storageRef, item.blob);
           const url = await getDownloadURL(storageRef);
 
-          // 2. עדכון הדוח ב-Firestore - החלפת הלינק הזמני (המקומי) בלינק האמיתי בענן
+          // 2. עדכון Firestore
           const reportRef = doc(db, "reports", item.reportId);
           const snap = await getDoc(reportRef);
           
           if (snap.exists()) {
             const data = snap.data();
-            let newGroups = [...(data.groups || [])];
+            let newGroups = JSON.parse(JSON.stringify(data.groups || []));
             const gIndex = newGroups.findIndex(g => g.id === item.groupId);
             
             if (gIndex > -1) {
@@ -63,15 +61,35 @@ export async function syncOfflineImages(user) {
               if (imgIndex > -1) {
                 newGroups[gIndex].images[imgIndex] = url;
                 await updateDoc(reportRef, { groups: newGroups });
+                
+                // 3. עדכון ה-UI בזמן אמת (אם זה הדוח הפתוח כרגע)
+                if (activeReport && activeReport.id === item.reportId && setActiveReport) {
+                  setActiveReport(prev => {
+                    if (!prev) return prev;
+                    let updatedReport = JSON.parse(JSON.stringify(prev));
+                    const liveGIndex = updatedReport.groups.findIndex(g => g.id === item.groupId);
+                    if (liveGIndex > -1) {
+                      const liveImgIndex = updatedReport.groups[liveGIndex].images.indexOf(item.localUrl);
+                      if (liveImgIndex > -1) {
+                        updatedReport.groups[liveGIndex].images[liveImgIndex] = url;
+                      }
+                    }
+                    return updatedReport;
+                  });
+                }
               }
             }
           }
           
-          // 3. מחיקת התמונה מתור ההמתנה בטלפון אחרי הצלחה
+          // 4. ניקוי מהטלפון
           const delTx = database.transaction(STORE_NAME, 'readwrite');
           delTx.objectStore(STORE_NAME).delete(item.id);
+          
+          // שחרור כתובת הזיכרון הזמנית
+          URL.revokeObjectURL(item.localUrl);
+          
         } catch (e) { 
-          console.error("שגיאה בסנכרון תמונה", e); 
+          console.error("שגיאה בסנכרון פריט", e); 
         }
       }
       resolve();
