@@ -13,10 +13,32 @@ export default function ReportView({ activeReport, setView }) {
     return { gridTemplateColumns: 'repeat(4, 1fr)', gridAutoRows: '1fr' };
   };
 
-  const handlePrint = () => { const originalTitle = document.title; document.title = activeReport.title || 'StoreCheck_Report'; window.print(); document.title = originalTitle; };
+  const handlePrint = () => {
+    const originalTitle = document.title;
+    document.title = activeReport.title || 'StoreCheck_Report';
+    window.print();
+    document.title = originalTitle;
+  };
 
   const exportToDoc = () => {
     let groupsHtml = '';
+    
+    // דף שער מעוצב עם אלמנטים גרפיים כחולים
+    const coverHtml = `
+      <table width="500" align="center" style="border: 8px double #1a365d; background-color: #f0f7ff; margin-bottom: 50pt;" cellpadding="40">
+        <tr>
+          <td align="center">
+            <div style="font-size: 14pt; color: #3498db; font-weight: bold; font-family: Arial;">DIPLOMAT GROUP</div>
+            <h1 style="font-size: 38pt; color: #1a365d; margin: 15pt 0; font-family: Arial;">${activeReport.title}</h1>
+            <div style="width: 120pt; border-top: 4pt solid #3498db; margin: 20pt auto;"></div>
+            <p style="font-size: 20pt; color: #2c3e50; font-weight: bold; font-family: Arial;">דוח סיור חנות ומדדי ביצוע</p>
+            <p style="font-size: 14pt; color: #7f8c8d; margin-top: 30pt; font-family: Arial;">הופק בתאריך: ${new Date(activeReport.createdAt).toLocaleDateString('he-IL')}</p>
+          </td>
+        </tr>
+      </table>
+      <br clear="all" style="page-break-before:always; mso-break-type:section-break;" />
+    `;
+
     activeReport.groups.forEach((group) => {
       const items = group.items || [];
       const legacyImages = group.images?.map(url => ({ type: 'image', url })) || [];
@@ -25,40 +47,60 @@ export default function ReportView({ activeReport, setView }) {
       const notes = allItems.filter(item => item.type === 'note');
       const images = allItems.filter(item => item.type === 'image');
 
-      let groupHtml = `<table width="580" align="center" style="border: 2px solid #2c3e50; margin-bottom: 20px; table-layout: fixed;" cellpadding="15"><tr><td align="right">`;
-      groupHtml += `<h2 style="font-size: 20pt; color: #2c3e50; border-bottom: 2px solid #eee; font-family: Arial;">${group.title || 'קבוצה ללא שם'}</h2>`;
-      notes.forEach(note => { groupHtml += `<div style="padding: 10px; border-right: 5px solid #3498db; background: #f4f7f9; margin-bottom: 10px; font-family: Arial; font-size: 12pt;">${note.text}</div>`; });
+      // מסגרת קשיחה לכל קבוצה (500pt מבטיח שלא ייחתך בוורד)
+      let groupHtml = `
+        <table width="500" align="center" style="border: 2pt solid #1a365d; table-layout: fixed; margin-bottom: 15pt;" cellpadding="15">
+          <tr>
+            <td align="right" valign="top">
+              <h2 style="font-size: 22pt; color: #1a365d; border-bottom: 1.5pt solid #eee; padding-bottom: 8pt; font-family: Arial;">${group.title || 'קבוצה ללא שם'}</h2>
+      `;
+
+      notes.forEach(note => {
+        groupHtml += `<div style="padding: 10pt; border-right: 5pt solid #3498db; background: #f4f7f9; margin-bottom: 8pt; font-family: Arial; font-size: 13pt;">${note.text}</div>`;
+      });
+
       if (images.length > 0) {
         const cols = images.length === 1 ? 1 : (images.length <= 4 ? 2 : 3);
-        const cellWidth = Math.floor(540 / cols);
-        groupHtml += `<table width="100%" cellspacing="5" style="table-layout: fixed;"><tr>`;
+        const cellWidth = Math.floor(460 / cols);
+        groupHtml += `<table width="100%" cellspacing="5" cellpadding="0" style="table-layout: fixed;"><tr>`;
+        
         images.forEach((img, idx) => {
           if (idx > 0 && idx % cols === 0) groupHtml += `</tr><tr>`;
-          groupHtml += `<td valign="top" width="${cellWidth}" style="text-align: center; border: 1px solid #eee; padding: 5px;">
-            <img src="${img.url || img.localUrl}" width="${cellWidth - 20}" style="display: block; margin: 0 auto;" />
-            ${img.note ? `<div style="background: #f1c40f22; border-right: 3px solid #f1c40f; padding: 5px; font-size: 10pt; font-family: Arial;">${img.note}</div>` : ''}
-          </td>`;
+          groupHtml += `
+            <td valign="top" width="${cellWidth}" style="text-align: center; border: 0.5pt solid #ddd; padding: 4pt;">
+              <img src="${img.url || img.localUrl}" width="${cellWidth - 15}" style="display: block; margin: 0 auto;" />
+              ${img.note ? `<div style="background: #fdf9e7; border-right: 2.5pt solid #f1c40f; padding: 4pt; font-size: 10pt; font-family: Arial; text-align: right; margin-top: 4pt;">${img.note}</div>` : ''}
+            </td>`;
         });
+        
         const rem = (cols - (images.length % cols)) % cols;
         for(let i=0; i<rem; i++) groupHtml += `<td width="${cellWidth}"></td>`;
         groupHtml += `</tr></table>`;
       }
-      groupHtml += `</td></tr></table><br style="page-break-before:always; mso-break-type:section-break;" />`;
+      
+      groupHtml += `</td></tr></table><br clear="all" style="page-break-before:always; mso-break-type:section-break;" />`;
       groupsHtml += groupHtml;
     });
 
-    const header = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset='utf-8'><style>@page { size: A4; margin: 1.5cm; } body { font-family: Arial; direction: rtl; }</style></head><body>
-      <table width="580" align="center" style="border: 6px double #2c3e50; background-color: #f4f7f9; margin-bottom: 40px;" cellpadding="40"><tr><td align="center">
-        <h1 style="font-size: 36pt; color: #2c3e50; margin: 0;">${activeReport.title}</h1>
-        <div style="width: 80px; height: 3px; background: #3498db; margin: 20px 0;"></div>
-        <p style="font-size: 18pt; color: #34495e; font-weight: bold; margin: 5px 0;">דוח סיור חנות מקצועי</p>
-        <p style="font-size: 14pt; color: #7f8c8d; margin-top: 20px;">תאריך: ${new Date(activeReport.createdAt).toLocaleDateString('he-IL')}</p>
-      </td></tr></table><br style="page-break-before:always; mso-break-type:section-break;" />${groupsHtml}</body></html>`;
+    const fullHtml = `
+      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+      <head>
+        <meta charset='utf-8'>
+        <style>
+          @page { size: 595.3pt 841.9pt; margin: 40pt; mso-header-margin: 35.4pt; mso-footer-margin: 35.4pt; }
+          body { font-family: Arial, sans-serif; direction: rtl; }
+        </style>
+      </head>
+      <body>
+        ${coverHtml}
+        ${groupsHtml}
+      </body>
+      </html>
+    `;
     
-    const blob = new Blob(['\ufeff', header], { type: 'application/msword' });
-    const url = URL.createObjectURL(blob);
+    const blob = new Blob(['\ufeff', fullHtml], { type: 'application/msword' });
     const link = document.createElement("a");
-    link.href = url;
+    link.href = URL.createObjectURL(blob);
     link.download = `${activeReport.title}.doc`;
     link.click();
   };
@@ -69,10 +111,27 @@ export default function ReportView({ activeReport, setView }) {
         @media print {
           body { margin: 0; padding: 0; background: white; }
           .no-print { display: none !important; }
-          .report-group-page { height: 96vh !important; page-break-after: always !important; break-after: page !important; display: flex !important; flexDirection: column !important; margin: 0 !important; padding: 20px !important; box-sizing: border-box !important; border: 1px solid #2c3e50 !important; }
-          .title-page-print { background-color: #f0f4f8 !important; border: 6px double #2c3e50 !important; -webkit-print-color-adjust: exact; justify-content: center !important; align-items: center !important; text-align: center !important; }
+          .report-group-page {
+            height: 96vh !important; 
+            page-break-after: always !important;
+            break-after: page !important;
+            display: flex !important;
+            flex-direction: column !important;
+            margin: 0 !important;
+            padding: 25px !important;
+            box-sizing: border-box !important;
+            page-break-inside: avoid !important;
+            border: 2px solid #1a365d !important;
+          }
+          .title-page-print {
+            background-color: #f0f7ff !important;
+            border: 8px double #1a365d !important;
+            -webkit-print-color-adjust: exact;
+            justify-content: center !important;
+          }
         }
       `}</style>
+      
       <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <button onClick={() => setView('tour')} style={backBtnStyle}><ArrowRight size={20} /> חזרה</button>
         <div style={{ display: 'flex', gap: '10px' }}>
@@ -80,18 +139,22 @@ export default function ReportView({ activeReport, setView }) {
           <button onClick={handlePrint} style={printBtnStyle}>שמור PDF</button>
         </div>
       </div>
+      
       <div id="printable-report-content">
         <div style={titlePageStyle} className="report-group-page title-page-print">
-          <h1 style={{ fontSize: '48px', color: '#1a252f', marginBottom: '10px' }}>{activeReport.title}</h1>
-          <div style={{ width: '100px', height: '4px', backgroundColor: '#3498db', margin: '20px auto' }}></div>
-          <p style={{ fontSize: '24px', color: '#34495e', fontWeight: 'bold' }}>דוח סיור חנות ומדדי ביצוע</p>
-          <p style={{ fontSize: '18px', color: '#7f8c8d', marginTop: '40px' }}>{new Date(activeReport.createdAt).toLocaleDateString('he-IL')}</p>
+          <div style={{ fontSize: '18px', color: '#3498db', fontWeight: 'bold', marginBottom: '10px' }}>DIPLOMAT GROUP</div>
+          <h1 style={{ fontSize: '52px', color: '#1a365d', marginBottom: '10px', fontWeight: '900' }}>{activeReport.title}</h1>
+          <div style={{ width: '120px', height: '6px', backgroundColor: '#3498db', margin: '20px auto' }}></div>
+          <p style={{ fontSize: '26px', color: '#2c3e50', fontWeight: 'bold' }}>דוח סיור חנות ומדדי ביצוע</p>
+          <p style={{ fontSize: '18px', color: '#7f8c8d', marginTop: '50px' }}>{new Date(activeReport.createdAt).toLocaleDateString('he-IL')}</p>
         </div>
+
         {activeReport.groups && activeReport.groups.map(group => {
           const items = group.items || [];
           const allItems = items.length > 0 ? items : [...(group.images?.map(url => ({ type: 'image', url })) || []), ...(group.notes?.map(text => ({ type: 'note', text })) || [])];
           const notes = allItems.filter(item => item.type === 'note');
           const images = allItems.filter(item => item.type === 'image');
+
           return (
             <div key={group.id} className="report-group-page" style={reportGroupStyle}>
               <h3 style={groupHeaderStyle}>{group.title || 'קבוצה ללא שם'}</h3>
@@ -115,15 +178,15 @@ export default function ReportView({ activeReport, setView }) {
 }
 
 const reportContainerStyle = { padding: '20px', width: '100%', boxSizing: 'border-box', margin: '0 auto', backgroundColor: '#f0f2f5', minHeight: '100vh' };
-const titlePageStyle = { display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center', backgroundColor: '#f8fafc', border: '8px double #2c3e50', padding: '40px', minHeight: '300px' };
-const reportGroupStyle = { display: 'flex', flexDirection: 'column', padding: '20px', borderRadius: '0px', marginBottom: '30px', backgroundColor: 'white', boxSizing: 'border-box', border: '1px solid #2c3e50', minHeight: '300px' };
-const groupHeaderStyle = { marginTop: 0, color: '#2c3e50', borderBottom: '2px solid #eee', paddingBottom: '10px', marginBottom: '10px', fontSize: '24px', flexShrink: 0 };
-const notesContainerStyle = { display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '10px', flexShrink: 0 };
-const noteItemStyle = { padding: '10px 15px', background: '#fff', borderRight: '5px solid #3498db', fontSize: '16px', borderRadius: '4px', width: '100%', boxSizing: 'border-box' };
-const imageGridContainerStyle = { display: 'grid', gap: '2px', flex: 1, minHeight: 0 };
+const titlePageStyle = { display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center', backgroundColor: '#f0f7ff', border: '8px double #1a365d', padding: '40px' };
+const reportGroupStyle = { display: 'flex', flexDirection: 'column', padding: '25px', marginBottom: '30px', backgroundColor: 'white', boxSizing: 'border-box', border: '2px solid #1a365d', minHeight: '300px' };
+const groupHeaderStyle = { marginTop: 0, color: '#1a365d', borderBottom: '2.5px solid #eee', paddingBottom: '12px', marginBottom: '15px', fontSize: '26px', flexShrink: 0 };
+const notesContainerStyle = { display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '15px' };
+const noteItemStyle = { padding: '12px 18px', background: '#fff', borderRight: '6px solid #3498db', fontSize: '17px', borderRadius: '4px', width: '100%', boxSizing: 'border-box' };
+const imageGridContainerStyle = { display: 'grid', gap: '3px', flex: 1, minHeight: 0 };
 const imageWrapperStyle = { position: 'relative', height: '100%', width: '100%', minHeight: 0, backgroundColor: '#fdfdfd', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' };
 const imageStyle = { width: '100%', height: '100%', objectFit: 'contain', display: 'block' };
-const attachedNoteOverlayStyle = { position: 'absolute', bottom: 0, left: 0, right: 0, padding: '5px 10px', backgroundColor: 'rgba(255, 255, 255, 0.85)', borderTop: '2px solid #f1c40f', fontSize: '12px', color: '#2c3e50' };
-const printBtnStyle = { padding: '10px 20px', backgroundColor: '#27ae60', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' };
-const docsBtnStyle = { padding: '10px 20px', backgroundColor: '#4285F4', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' };
-const backBtnStyle = { border: 'none', background: 'none', color: '#3498db', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 'bold' };
+const attachedNoteOverlayStyle = { position: 'absolute', bottom: 0, left: 0, right: 0, padding: '6px 12px', backgroundColor: 'rgba(255, 255, 255, 0.9)', borderTop: '2.5px solid #f1c40f', fontSize: '13px', color: '#1a365d' };
+const printBtnStyle = { padding: '12px 24px', backgroundColor: '#27ae60', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' };
+const docsBtnStyle = { padding: '12px 24px', backgroundColor: '#4285F4', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' };
+const backBtnStyle = { border: 'none', background: 'none', color: '#3498db', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 'bold', fontSize: '17px' };
