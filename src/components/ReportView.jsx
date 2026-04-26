@@ -9,99 +9,48 @@ export default function ReportView({ activeReport, setView }) {
     if (count === 2) return { gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr' };
     if (count === 3 || count === 4) return { gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr' };
     if (count <= 6) return { gridTemplateColumns: '1fr 1fr 1fr', gridTemplateRows: '1fr 1fr' };
-    if (count <= 9) return { gridTemplateColumns: '1fr 1fr 1fr', gridTemplateRows: '1fr 1fr 1fr' };
     return { gridTemplateColumns: 'repeat(4, 1fr)', gridAutoRows: '1fr' };
   };
 
-  const handlePrint = () => {
-    const originalTitle = document.title;
-    document.title = activeReport.title || 'StoreCheck_Report';
-    window.print();
-    document.title = originalTitle;
-  };
+  const handlePrint = () => { const originalTitle = document.title; document.title = activeReport.title || 'StoreCheck_Report'; window.print(); document.title = originalTitle; };
 
   const exportToDoc = () => {
     let groupsHtml = '';
-    
-    const coverHtml = `
-      <table width="500" align="center" style="border: 8px double #1a365d; background-color: #f0f7ff; margin-bottom: 40pt;" cellpadding="40">
-        <tr>
-          <td align="center" valign="middle">
-            <div style="font-size: 14pt; color: #3498db; font-weight: bold; font-family: Arial;">DIPLOMAT GROUP</div>
-            <h1 style="font-size: 38pt; color: #1a365d; margin: 15pt 0; font-family: Arial;">${activeReport.title}</h1>
-            <div style="width: 120pt; border-top: 4pt solid #3498db; margin: 20pt auto;"></div>
-            <p style="font-size: 20pt; color: #2c3e50; font-weight: bold; font-family: Arial;">דוח סיור חנות ומדדי ביצוע</p>
-            <p style="font-size: 14pt; color: #7f8c8d; margin-top: 30pt; font-family: Arial;">הופק בתאריך: ${new Date(activeReport.createdAt).toLocaleDateString('he-IL')}</p>
-          </td>
-        </tr>
-      </table>
-      <br clear="all" style="page-break-before:always; mso-break-type:section-break;" />
-    `;
+    const coverHtml = `<table width="480" align="center" style="border: 8pt double #1a365d; background-color: #f0f7ff; margin-bottom: 30pt;" cellpadding="40"><tr><td align="center"><div style="font-size: 14pt; color: #3498db; font-weight: bold; font-family: Arial;">DIPLOMAT GROUP</div><h1 style="font-size: 36pt; color: #1a365d; margin: 15pt 0; font-family: Arial;">${activeReport.title}</h1><div style="width: 100pt; border-top: 4pt solid #3498db; margin: 15pt auto;"></div><p style="font-size: 18pt; color: #2c3e50; font-weight: bold; font-family: Arial;">דוח סיור חנות ומדדי ביצוע</p><p style="font-size: 12pt; color: #7f8c8d; margin-top: 25pt; font-family: Arial;">תאריך: ${new Date(activeReport.createdAt).toLocaleDateString('he-IL')}</p></td></tr></table><br clear="all" style="page-break-before:always; mso-break-type:section-break;" />`;
 
     activeReport.groups.forEach((group) => {
-      const items = group.items || [];
-      const legacyImages = group.images?.map(url => ({ type: 'image', url })) || [];
-      const legacyNotes = group.notes?.map(text => ({ type: 'note', text })) || [];
-      const allItems = items.length > 0 ? items : [...legacyImages, ...legacyNotes];
+      const allItems = group.items || [...(group.images?.map(url => ({ type: 'image', url })) || []), ...(group.notes?.map(text => ({ type: 'note', text })) || [])];
       const notes = allItems.filter(item => item.type === 'note');
       const images = allItems.filter(item => item.type === 'image');
 
-      let groupHtml = `
-        <table width="500" align="center" style="border: 2pt solid #1a365d; margin-bottom: 0;" cellpadding="20">
-          <tr>
-            <td align="right" valign="top">
-              <h2 style="font-size: 22pt; color: #1a365d; border-bottom: 1.5pt solid #eee; padding-bottom: 8pt; font-family: Arial; margin-top: 0;">${group.title || 'קבוצה ללא שם'}</h2>
-      `;
-
-      notes.forEach(note => {
-        groupHtml += `<div style="padding: 10pt; border-right: 5pt solid #3498db; background: #f4f7f9; margin-bottom: 8pt; font-family: Arial; font-size: 13pt;">${note.text}</div>`;
-      });
+      let groupHtml = `<table width="480" align="center" style="border: 2pt solid #1a365d; table-layout: fixed; margin-bottom: 0;" cellpadding="15"><tr><td align="right" valign="top">`;
+      groupHtml += `<h2 style="font-size: 20pt; color: #1a365d; border-bottom: 1.5pt solid #eee; padding-bottom: 8pt; font-family: Arial; margin-top: 0;">${group.title || 'קבוצה ללא שם'}</h2>`;
+      notes.forEach(note => { groupHtml += `<div style="padding: 10pt; border-right: 5pt solid #3498db; background: #f4f7f9; margin-bottom: 8pt; font-family: Arial; font-size: 12pt; direction: rtl;">${note.text}</div>`; });
 
       if (images.length > 0) {
         const cols = images.length === 1 ? 1 : (images.length <= 4 ? 2 : 3);
-        const imgWidth = images.length === 1 ? 250 : Math.floor(450 / cols) - 10;
-
-        groupHtml += `<table width="100%" cellspacing="5" cellpadding="0" style="margin-top: 10pt;"><tr>`;
+        const cellWidth = Math.floor(440 / cols);
+        const imgHeightLimit = images.length <= 2 ? '280pt' : '180pt'; // הגבלת גובה קשיחה למניעת פיצול דפים
         
+        groupHtml += `<table width="100%" cellspacing="5" cellpadding="0" style="table-layout: fixed;"><tr>`;
         images.forEach((img, idx) => {
           if (idx > 0 && idx % cols === 0) groupHtml += `</tr><tr>`;
-          groupHtml += `
-            <td valign="top" width="${Math.floor(100/cols)}%" style="text-align: center; border: 0.5pt solid #ddd; padding: 4pt;">
-              <img src="${img.url || img.localUrl}" width="${imgWidth}" style="display: block; margin: 0 auto; height: auto;" />
-              ${img.note ? `<div style="background: #fdf9e7; border-right: 2.5pt solid #f1c40f; padding: 4pt; font-size: 10pt; font-family: Arial; text-align: right; margin-top: 4pt;">${img.note}</div>` : ''}
-            </td>`;
+          groupHtml += `<td valign="top" width="${cellWidth}" style="text-align: center; border: 0.5pt solid #ddd; padding: 4pt;">
+            <img src="${img.url || img.localUrl}" height="${imgHeightLimit}" style="max-width: 100%; display: block; margin: 0 auto;" />
+            ${img.note ? `<div style="background: #fdf9e7; border-right: 2pt solid #f1c40f; padding: 4pt; font-size: 9pt; font-family: Arial; text-align: right; margin-top: 4pt; direction: rtl;">${img.note}</div>` : ''}
+          </td>`;
         });
-        
         const rem = (cols - (images.length % cols)) % cols;
         for(let i=0; i<rem; i++) groupHtml += `<td></td>`;
         groupHtml += `</tr></table>`;
       }
-      
       groupHtml += `</td></tr></table><br clear="all" style="page-break-before:always; mso-break-type:section-break;" />`;
       groupsHtml += groupHtml;
     });
 
-    const fullHtml = `
-      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
-      <head>
-        <meta charset='utf-8'>
-        <style>
-          @page { size: 595.3pt 841.9pt; margin: 40pt; }
-          body { font-family: Arial, sans-serif; direction: rtl; }
-        </style>
-      </head>
-      <body>
-        ${coverHtml}
-        ${groupsHtml}
-      </body>
-      </html>
-    `;
-    
+    const fullHtml = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset='utf-8'><style>@page { size: 595.3pt 841.9pt; margin: 30pt; } body { font-family: Arial, sans-serif; direction: rtl; }</style></head><body>${coverHtml}${groupsHtml}</body></html>`;
     const blob = new Blob(['\ufeff', fullHtml], { type: 'application/msword' });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `${activeReport.title}.doc`;
-    link.click();
+    const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `${activeReport.title}.doc`; link.click();
   };
 
   return (
@@ -110,7 +59,7 @@ export default function ReportView({ activeReport, setView }) {
         @media print {
           body { margin: 0; padding: 0; background: white; }
           .no-print { display: none !important; }
-          .report-group-page { height: 96vh !important; page-break-after: always !important; break-after: page !important; display: flex !important; flex-direction: column !important; margin: 0 !important; padding: 25px !important; box-sizing: border-box !important; page-break-inside: avoid !important; border: 2px solid #1a365d !important; }
+          .report-group-page { height: 96vh !important; page-break-after: always !important; break-after: page !important; display: flex !important; flexDirection: column !important; margin: 0 !important; padding: 25px !important; box-sizing: border-box !important; page-break-inside: avoid !important; border: 1px solid #1a365d !important; }
           .title-page-print { background-color: #f0f7ff !important; border: 8px double #1a365d !important; -webkit-print-color-adjust: exact; justify-content: center !important; }
         }
       `}</style>
