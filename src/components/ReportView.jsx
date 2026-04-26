@@ -14,41 +14,61 @@ export default function ReportView({ activeReport, setView }) {
 
   const handlePrint = () => { const originalTitle = document.title; document.title = activeReport.title || 'StoreCheck_Report'; window.print(); document.title = originalTitle; };
 
+  // הגישה החדשה והפשוטה לוורד: Divs חופשיים וגובה תמונה נקי (בלי טבלאות ענק)
   const exportToDoc = () => {
     let groupsHtml = '';
-    const coverHtml = `<table width="480" align="center" style="border: 8pt double #1a365d; background-color: #f0f7ff; margin-bottom: 30pt;" cellpadding="40"><tr><td align="center"><div style="font-size: 14pt; color: #3498db; font-weight: bold; font-family: Arial;">DIPLOMAT GROUP</div><h1 style="font-size: 36pt; color: #1a365d; margin: 15pt 0; font-family: Arial;">${activeReport.title}</h1><div style="width: 100pt; border-top: 4pt solid #3498db; margin: 15pt auto;"></div><p style="font-size: 18pt; color: #2c3e50; font-weight: bold; font-family: Arial;">דוח סיור חנות ומדדי ביצוע</p><p style="font-size: 12pt; color: #7f8c8d; margin-top: 25pt; font-family: Arial;">תאריך: ${new Date(activeReport.createdAt).toLocaleDateString('he-IL')}</p></td></tr></table><br clear="all" style="page-break-before:always; mso-break-type:section-break;" />`;
+    
+    // דף שער
+    const coverHtml = `
+      <div style="border: 6pt double #1a365d; background-color: #f0f7ff; padding: 40pt; text-align: center; margin-bottom: 20pt;">
+        <div style="font-size: 14pt; color: #3498db; font-weight: bold; font-family: Arial;">DIPLOMAT GROUP</div>
+        <h1 style="font-size: 36pt; color: #1a365d; margin: 15pt 0; font-family: Arial;">${activeReport.title}</h1>
+        <div style="width: 100pt; border-top: 4pt solid #3498db; margin: 20pt auto;"></div>
+        <p style="font-size: 18pt; color: #2c3e50; font-weight: bold; font-family: Arial;">דוח סיור חנות ומדדי ביצוע</p>
+        <p style="font-size: 12pt; color: #7f8c8d; margin-top: 30pt; font-family: Arial;">הופק בתאריך: ${new Date(activeReport.createdAt).toLocaleDateString('he-IL')}</p>
+      </div>
+      <br clear="all" style="page-break-before:always;" />
+    `;
 
     activeReport.groups.forEach((group) => {
       const allItems = group.items || [...(group.images?.map(url => ({ type: 'image', url })) || []), ...(group.notes?.map(text => ({ type: 'note', text })) || [])];
       const notes = allItems.filter(item => item.type === 'note');
       const images = allItems.filter(item => item.type === 'image');
 
-      let groupHtml = `<table width="480" align="center" style="border: 2pt solid #1a365d; table-layout: fixed; margin-bottom: 0;" cellpadding="15"><tr><td align="right" valign="top">`;
-      groupHtml += `<h2 style="font-size: 20pt; color: #1a365d; border-bottom: 1.5pt solid #eee; padding-bottom: 8pt; font-family: Arial; margin-top: 0;">${group.title || 'קבוצה ללא שם'}</h2>`;
-      notes.forEach(note => { groupHtml += `<div style="padding: 10pt; border-right: 5pt solid #3498db; background: #f4f7f9; margin-bottom: 8pt; font-family: Arial; font-size: 12pt; direction: rtl;">${note.text}</div>`; });
+      // מסגרת קבוצה פשוטה שתופסת בדיוק את הרוחב הפנוי בדף
+      let groupHtml = `<div style="border: 2pt solid #1a365d; padding: 15pt; margin-bottom: 10pt;">`;
+      groupHtml += `<h2 style="font-size: 20pt; color: #1a365d; border-bottom: 1.5pt solid #eee; padding-bottom: 5pt; font-family: Arial; text-align: right; direction: rtl;">${group.title || 'קבוצה ללא שם'}</h2>`;
+      
+      notes.forEach(note => { 
+        groupHtml += `<div style="padding: 10pt; border-right: 5pt solid #3498db; background: #f4f7f9; margin-bottom: 10pt; font-family: Arial; font-size: 12pt; direction: rtl; text-align: right;">${note.text}</div>`; 
+      });
 
       if (images.length > 0) {
-        const cols = images.length === 1 ? 1 : (images.length <= 4 ? 2 : 3);
-        const cellWidth = Math.floor(440 / cols);
-        const imgHeightLimit = images.length <= 2 ? '280pt' : '180pt'; // הגבלת גובה קשיחה למניעת פיצול דפים
-        
-        groupHtml += `<table width="100%" cellspacing="5" cellpadding="0" style="table-layout: fixed;"><tr>`;
+        // קביעת גובה התמונה לפי כמות התמונות (כדי שלא יגלשו דף)
+        let imgHeight = 350;
+        let cols = 1;
+        if (images.length === 2) { imgHeight = 250; cols = 2; }
+        else if (images.length === 3 || images.length === 4) { imgHeight = 180; cols = 2; }
+        else if (images.length > 4) { imgHeight = 130; cols = 3; }
+
+        groupHtml += `<table width="100%" cellpadding="5" style="margin-top: 10pt;"><tr>`;
         images.forEach((img, idx) => {
           if (idx > 0 && idx % cols === 0) groupHtml += `</tr><tr>`;
-          groupHtml += `<td valign="top" width="${cellWidth}" style="text-align: center; border: 0.5pt solid #ddd; padding: 4pt;">
-            <img src="${img.url || img.localUrl}" height="${imgHeightLimit}" style="max-width: 100%; display: block; margin: 0 auto;" />
-            ${img.note ? `<div style="background: #fdf9e7; border-right: 2pt solid #f1c40f; padding: 4pt; font-size: 9pt; font-family: Arial; text-align: right; margin-top: 4pt; direction: rtl;">${img.note}</div>` : ''}
+          // רק פקודת height מועברת לוורד. זה מבטיח שמירת פרופורציה.
+          groupHtml += `<td align="center" valign="top" style="border: 1pt solid #eee; padding: 5pt;">
+            <img src="${img.url || img.localUrl}" height="${imgHeight}" />
+            ${img.note ? `<div style="background: #fdf9e7; padding: 4pt; font-size: 10pt; font-family: Arial; margin-top: 4pt; direction: rtl; text-align: right;">${img.note}</div>` : ''}
           </td>`;
         });
         const rem = (cols - (images.length % cols)) % cols;
         for(let i=0; i<rem; i++) groupHtml += `<td></td>`;
         groupHtml += `</tr></table>`;
       }
-      groupHtml += `</td></tr></table><br clear="all" style="page-break-before:always; mso-break-type:section-break;" />`;
+      groupHtml += `</div><br clear="all" style="page-break-before:always;" />`;
       groupsHtml += groupHtml;
     });
 
-    const fullHtml = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset='utf-8'><style>@page { size: 595.3pt 841.9pt; margin: 30pt; } body { font-family: Arial, sans-serif; direction: rtl; }</style></head><body>${coverHtml}${groupsHtml}</body></html>`;
+    const fullHtml = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset='utf-8'><style>@page { size: A4; margin: 2cm; } body { font-family: Arial, sans-serif; direction: rtl; }</style></head><body>${coverHtml}${groupsHtml}</body></html>`;
     const blob = new Blob(['\ufeff', fullHtml], { type: 'application/msword' });
     const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `${activeReport.title}.doc`; link.click();
   };
