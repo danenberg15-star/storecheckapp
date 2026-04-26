@@ -3,7 +3,6 @@ import { ArrowRight } from 'lucide-react';
 export default function ReportView({ activeReport, setView }) {
   if (!activeReport) return null;
 
-  // פונקציה המחשבת את פריסת הגריד עבור התמונות בלבד
   const getImageGridStyle = (count) => {
     if (count === 0) return {};
     if (count === 1) return { gridTemplateColumns: '1fr', gridTemplateRows: '1fr' };
@@ -14,7 +13,6 @@ export default function ReportView({ activeReport, setView }) {
     return { gridTemplateColumns: 'repeat(4, 1fr)', gridAutoRows: '1fr' };
   };
 
-  // פונקציה להדפסת PDF עם שם הקובץ הנכון
   const handlePrint = () => {
     const originalTitle = document.title;
     document.title = activeReport.title || 'StoreCheck_Report';
@@ -22,7 +20,6 @@ export default function ReportView({ activeReport, setView }) {
     document.title = originalTitle;
   };
 
-  // פונקציה לייצוא לקובץ Word/Docs הניתן לעריכה
   const exportToDoc = () => {
     const content = document.getElementById('printable-report-content').innerHTML;
     const header = `
@@ -100,15 +97,12 @@ export default function ReportView({ activeReport, setView }) {
         </div>
       </div>
       
-      {/* אזור התוכן שייכנס לייצוא ולהדפסה */}
       <div id="printable-report-content">
-        {/* דף שער */}
         <div style={reportHeaderStyle} className="report-header-page">
           <h1 style={{ fontSize: '42px', color: '#2c3e50', marginBottom: '10px' }}>{activeReport.title}</h1>
           <p style={{ fontSize: '22px', color: '#7f8c8d' }}>{new Date(activeReport.createdAt).toLocaleDateString('he-IL')}</p>
         </div>
 
-        {/* דפי קבוצות */}
         {activeReport.groups && activeReport.groups.map(group => {
           const items = group.items || [];
           const legacyImages = group.images?.map(url => ({ type: 'image', url })) || [];
@@ -145,7 +139,6 @@ export default function ReportView({ activeReport, setView }) {
                         src={img.url || img.localUrl} 
                         style={imageStyle} 
                         alt="store" 
-                        crossOrigin="anonymous"
                       />
                       {img.note && (
                         <div style={attachedNoteOverlayStyle} className="image-note">
