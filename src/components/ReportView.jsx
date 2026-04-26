@@ -23,11 +23,10 @@ export default function ReportView({ activeReport, setView }) {
   const exportToDoc = () => {
     let groupsHtml = '';
     
-    // דף שער מעוצב עם אלמנטים גרפיים כחולים
     const coverHtml = `
-      <table width="500" align="center" style="border: 8px double #1a365d; background-color: #f0f7ff; margin-bottom: 50pt;" cellpadding="40">
-        <tr>
-          <td align="center">
+      <table width="510" height="720" align="center" style="border: 8px double #1a365d; background-color: #f0f7ff; margin-bottom: 0;" cellpadding="40">
+        <tr height="720">
+          <td align="center" valign="middle" height="720">
             <div style="font-size: 14pt; color: #3498db; font-weight: bold; font-family: Arial;">DIPLOMAT GROUP</div>
             <h1 style="font-size: 38pt; color: #1a365d; margin: 15pt 0; font-family: Arial;">${activeReport.title}</h1>
             <div style="width: 120pt; border-top: 4pt solid #3498db; margin: 20pt auto;"></div>
@@ -47,12 +46,11 @@ export default function ReportView({ activeReport, setView }) {
       const notes = allItems.filter(item => item.type === 'note');
       const images = allItems.filter(item => item.type === 'image');
 
-      // מסגרת קשיחה לכל קבוצה (500pt מבטיח שלא ייחתך בוורד)
       let groupHtml = `
-        <table width="500" align="center" style="border: 2pt solid #1a365d; table-layout: fixed; margin-bottom: 15pt;" cellpadding="15">
-          <tr>
-            <td align="right" valign="top">
-              <h2 style="font-size: 22pt; color: #1a365d; border-bottom: 1.5pt solid #eee; padding-bottom: 8pt; font-family: Arial;">${group.title || 'קבוצה ללא שם'}</h2>
+        <table width="510" height="720" align="center" style="border: 2pt solid #1a365d; table-layout: fixed; margin-bottom: 0;" cellpadding="20">
+          <tr height="720">
+            <td align="right" valign="top" height="720">
+              <h2 style="font-size: 22pt; color: #1a365d; border-bottom: 1.5pt solid #eee; padding-bottom: 8pt; font-family: Arial; margin-top: 0;">${group.title || 'קבוצה ללא שם'}</h2>
       `;
 
       notes.forEach(note => {
@@ -62,13 +60,19 @@ export default function ReportView({ activeReport, setView }) {
       if (images.length > 0) {
         const cols = images.length === 1 ? 1 : (images.length <= 4 ? 2 : 3);
         const cellWidth = Math.floor(460 / cols);
-        groupHtml += `<table width="100%" cellspacing="5" cellpadding="0" style="table-layout: fixed;"><tr>`;
+        
+        let imgHeight = 320;
+        if (images.length > 1 && images.length <= 3) imgHeight = 200;
+        else if (images.length >= 4 && images.length <= 6) imgHeight = 140;
+        else if (images.length > 6) imgHeight = 100;
+
+        groupHtml += `<table width="100%" cellspacing="5" cellpadding="0" style="table-layout: fixed; margin-top: 10pt;"><tr>`;
         
         images.forEach((img, idx) => {
           if (idx > 0 && idx % cols === 0) groupHtml += `</tr><tr>`;
           groupHtml += `
             <td valign="top" width="${cellWidth}" style="text-align: center; border: 0.5pt solid #ddd; padding: 4pt;">
-              <img src="${img.url || img.localUrl}" width="${cellWidth - 15}" style="display: block; margin: 0 auto;" />
+              <img src="${img.url || img.localUrl}" height="${imgHeight}" style="display: block; margin: 0 auto; max-width: 100%;" />
               ${img.note ? `<div style="background: #fdf9e7; border-right: 2.5pt solid #f1c40f; padding: 4pt; font-size: 10pt; font-family: Arial; text-align: right; margin-top: 4pt;">${img.note}</div>` : ''}
             </td>`;
         });
@@ -87,7 +91,7 @@ export default function ReportView({ activeReport, setView }) {
       <head>
         <meta charset='utf-8'>
         <style>
-          @page { size: 595.3pt 841.9pt; margin: 40pt; mso-header-margin: 35.4pt; mso-footer-margin: 35.4pt; }
+          @page { size: 595.3pt 841.9pt; margin: 40pt; }
           body { font-family: Arial, sans-serif; direction: rtl; }
         </style>
       </head>
@@ -111,27 +115,10 @@ export default function ReportView({ activeReport, setView }) {
         @media print {
           body { margin: 0; padding: 0; background: white; }
           .no-print { display: none !important; }
-          .report-group-page {
-            height: 96vh !important; 
-            page-break-after: always !important;
-            break-after: page !important;
-            display: flex !important;
-            flex-direction: column !important;
-            margin: 0 !important;
-            padding: 25px !important;
-            box-sizing: border-box !important;
-            page-break-inside: avoid !important;
-            border: 2px solid #1a365d !important;
-          }
-          .title-page-print {
-            background-color: #f0f7ff !important;
-            border: 8px double #1a365d !important;
-            -webkit-print-color-adjust: exact;
-            justify-content: center !important;
-          }
+          .report-group-page { height: 96vh !important; page-break-after: always !important; break-after: page !important; display: flex !important; flex-direction: column !important; margin: 0 !important; padding: 25px !important; box-sizing: border-box !important; page-break-inside: avoid !important; border: 2px solid #1a365d !important; }
+          .title-page-print { background-color: #f0f7ff !important; border: 8px double #1a365d !important; -webkit-print-color-adjust: exact; justify-content: center !important; }
         }
       `}</style>
-      
       <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <button onClick={() => setView('tour')} style={backBtnStyle}><ArrowRight size={20} /> חזרה</button>
         <div style={{ display: 'flex', gap: '10px' }}>
@@ -139,7 +126,6 @@ export default function ReportView({ activeReport, setView }) {
           <button onClick={handlePrint} style={printBtnStyle}>שמור PDF</button>
         </div>
       </div>
-      
       <div id="printable-report-content">
         <div style={titlePageStyle} className="report-group-page title-page-print">
           <div style={{ fontSize: '18px', color: '#3498db', fontWeight: 'bold', marginBottom: '10px' }}>DIPLOMAT GROUP</div>
@@ -148,13 +134,11 @@ export default function ReportView({ activeReport, setView }) {
           <p style={{ fontSize: '26px', color: '#2c3e50', fontWeight: 'bold' }}>דוח סיור חנות ומדדי ביצוע</p>
           <p style={{ fontSize: '18px', color: '#7f8c8d', marginTop: '50px' }}>{new Date(activeReport.createdAt).toLocaleDateString('he-IL')}</p>
         </div>
-
         {activeReport.groups && activeReport.groups.map(group => {
           const items = group.items || [];
           const allItems = items.length > 0 ? items : [...(group.images?.map(url => ({ type: 'image', url })) || []), ...(group.notes?.map(text => ({ type: 'note', text })) || [])];
           const notes = allItems.filter(item => item.type === 'note');
           const images = allItems.filter(item => item.type === 'image');
-
           return (
             <div key={group.id} className="report-group-page" style={reportGroupStyle}>
               <h3 style={groupHeaderStyle}>{group.title || 'קבוצה ללא שם'}</h3>
