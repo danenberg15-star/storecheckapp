@@ -3,6 +3,7 @@ import { ArrowRight } from 'lucide-react';
 export default function ReportView({ activeReport, setView }) {
   if (!activeReport) return null;
 
+  // פונקציה המחשבת את פריסת הגריד עבור התמונות (עבור תצוגת אינטרנט ו-PDF)
   const getImageGridStyle = (count) => {
     if (count === 0) return {};
     if (count === 1) return { gridTemplateColumns: '1fr', gridTemplateRows: '1fr' };
@@ -20,27 +21,75 @@ export default function ReportView({ activeReport, setView }) {
     document.title = originalTitle;
   };
 
+  // פונקציה לבניית קובץ וורד מבוסס טבלאות (הפתרון לעיוות)
   const exportToDoc = () => {
-    const content = document.getElementById('printable-report-content').innerHTML;
+    let groupsHtml = '';
+
+    activeReport.groups.forEach((group) => {
+      const items = group.items || [];
+      const legacyImages = group.images?.map(url => ({ type: 'image', url })) || [];
+      const legacyNotes = group.notes?.map(text => ({ type: 'note', text })) || [];
+      const allItems = items.length > 0 ? items : [...legacyImages, ...legacyNotes];
+
+      const notes = allItems.filter(item => item.type === 'note');
+      const images = allItems.filter(item => item.type === 'image');
+
+      // בניית דף לקבוצה
+      let groupHtml = `<div class="report-group-page">`;
+      groupHtml += `<h2 class="group-title">${group.title || 'קבוצה ללא שם'}</h2>`;
+
+      // הוספת הערות ברוחב מלא
+      notes.forEach(note => {
+        groupHtml += `<div class="note-item">${note.text}</div>`;
+      });
+
+      // בניית רשת תמונות באמצעות טבלה (הדרך שוורד מבין)
+      if (images.length > 0) {
+        const cols = images.length === 1 ? 1 : (images.length <= 4 ? 2 : 3);
+        groupHtml += `<table width="100%" cellspacing="2" cellpadding="0" style="table-layout: fixed;"><tr>`;
+        
+        images.forEach((img, idx) => {
+          if (idx > 0 && idx % cols === 0) groupHtml += `</tr><tr>`;
+          groupHtml += `
+            <td valign="top" style="border: 1px solid #eee; padding: 5px; text-align: center;">
+              <img src="${img.url || img.localUrl}" style="width: 100%; height: auto;" />
+              ${img.note ? `<div class="image-note"><strong>הערה:</strong> ${img.note}</div>` : ''}
+            </td>`;
+        });
+        
+        // השלמת תאים ריקים לסגירת הטבלה
+        const remaining = (cols - (images.length % cols)) % cols;
+        for(let i=0; i<remaining; i++) groupHtml += `<td></td>`;
+        
+        groupHtml += `</tr></table>`;
+      }
+
+      groupHtml += `</div><br style="page-break-after: always; clear: both;">`;
+      groupsHtml += groupHtml;
+    });
+
     const header = `
       <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
       <head><meta charset='utf-8'><title>${activeReport.title}</title>
       <style>
-        body { font-family: Arial, sans-serif; direction: rtl; }
-        img { max-width: 100%; height: auto; }
-        .report-group-page { border: 1px solid #2c3e50; padding: 15px; margin-bottom: 20px; }
-        .group-title { font-size: 20pt; color: #2c3e50; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-top: 10px; }
-        .note-item { padding: 10px; border-right: 5px solid #3498db; background: #f9f9f9; margin-bottom: 5px; }
-        .image-note { color: #2c3e50; background: #f1c40f22; border-right: 3px solid #f1c40f; padding: 5px; font-size: 10pt; }
+        body { font-family: Arial, sans-serif; direction: rtl; margin: 0; padding: 0; }
+        .report-group-page { border: 2px solid #2c3e50; padding: 20px; margin-bottom: 20px; width: 100%; }
+        .group-title { font-size: 22pt; color: #2c3e50; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 15px; }
+        .note-item { padding: 12px; border-right: 6px solid #3498db; background: #f4f7f9; margin-bottom: 10px; font-size: 14pt; }
+        .image-note { color: #2c3e50; background: #f1c40f22; border-right: 3px solid #f1c40f; padding: 5px; font-size: 11pt; margin-top: 5px; text-align: right; }
       </style>
-      </head><body>`;
+      </head><body>
+      <div style="text-align: center; margin-bottom: 50px;">
+        <h1 style="font-size: 36pt;">${activeReport.title}</h1>
+        <p style="font-size: 18pt; color: #7f8c8d;">${new Date(activeReport.createdAt).toLocaleDateString('he-IL')}</p>
+      </div>
+      <br style="page-break-after: always;">
+    `;
+    
     const footer = "</body></html>";
-    const sourceHTML = header + content + footer;
+    const sourceHTML = header + groupsHtml + footer;
     
-    const blob = new Blob(['\ufeff', sourceHTML], {
-      type: 'application/msword'
-    });
-    
+    const blob = new Blob(['\ufeff', sourceHTML], { type: 'application/msword' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -80,7 +129,7 @@ export default function ReportView({ activeReport, setView }) {
             box-sizing: border-box !important;
             page-break-inside: avoid !important;
             background: white !important;
-            border: 1px solid #2c3e50 !important;
+            border: 2px solid #2c3e50 !important;
           }
         }
       `}</style>
@@ -137,11 +186,7 @@ export default function ReportView({ activeReport, setView }) {
                 }}>
                   {images.map((img, idx) => (
                     <div key={img.id || idx} style={imageWrapperStyle}>
-                      <img 
-                        src={img.url || img.localUrl} 
-                        style={imageStyle} 
-                        alt="store" 
-                      />
+                      <img src={img.url || img.localUrl} style={imageStyle} alt="store" />
                       {img.note && (
                         <div style={attachedNoteOverlayStyle} className="image-note">
                           <strong>הערה:</strong> {img.note}
@@ -165,10 +210,10 @@ export default function ReportView({ activeReport, setView }) {
   );
 }
 
-// Styles
+// Styles (UI)
 const reportContainerStyle = { padding: '20px', width: '100%', maxWidth: '100%', boxSizing: 'border-box', margin: '0 auto', backgroundColor: '#f0f2f5', minHeight: '100vh' };
 const reportHeaderStyle = { textAlign: 'center', padding: '40px 20px', marginBottom: '30px', backgroundColor: 'white', borderRadius: '15px', boxShadow: '0 4px 15px rgba(0,0,0,0.05)' };
-const reportGroupStyle = { display: 'flex', flexDirection: 'column', padding: '20px', borderRadius: '15px', marginBottom: '30px', backgroundColor: 'white', boxShadow: '0 4px 15px rgba(0,0,0,0.05)', boxSizing: 'border-box', border: '1px solid #2c3e50' };
+const reportGroupStyle = { display: 'flex', flexDirection: 'column', padding: '20px', borderRadius: '15px', marginBottom: '30px', backgroundColor: 'white', boxShadow: '0 4px 15px rgba(0,0,0,0.05)', boxSizing: 'border-box', border: '2px solid #2c3e50' };
 const groupHeaderStyle = { marginTop: 0, color: '#2c3e50', borderBottom: '2px solid #eee', paddingBottom: '10px', marginBottom: '10px', fontSize: '24px', flexShrink: 0 };
 const notesContainerStyle = { display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '10px', flexShrink: 0 };
 const noteItemStyle = { padding: '10px 15px', background: '#fff', borderRight: '5px solid #3498db', fontSize: '16px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', borderRadius: '4px', width: '100%', boxSizing: 'border-box' };
