@@ -24,9 +24,9 @@ export default function ReportView({ activeReport, setView }) {
     let groupsHtml = '';
     
     const coverHtml = `
-      <table width="510" height="720" align="center" style="border: 8px double #1a365d; background-color: #f0f7ff; margin-bottom: 0;" cellpadding="40">
-        <tr height="720">
-          <td align="center" valign="middle" height="720">
+      <table width="500" align="center" style="border: 8px double #1a365d; background-color: #f0f7ff; margin-bottom: 40pt;" cellpadding="40">
+        <tr>
+          <td align="center" valign="middle">
             <div style="font-size: 14pt; color: #3498db; font-weight: bold; font-family: Arial;">DIPLOMAT GROUP</div>
             <h1 style="font-size: 38pt; color: #1a365d; margin: 15pt 0; font-family: Arial;">${activeReport.title}</h1>
             <div style="width: 120pt; border-top: 4pt solid #3498db; margin: 20pt auto;"></div>
@@ -47,9 +47,9 @@ export default function ReportView({ activeReport, setView }) {
       const images = allItems.filter(item => item.type === 'image');
 
       let groupHtml = `
-        <table width="510" height="720" align="center" style="border: 2pt solid #1a365d; table-layout: fixed; margin-bottom: 0;" cellpadding="20">
-          <tr height="720">
-            <td align="right" valign="top" height="720">
+        <table width="500" align="center" style="border: 2pt solid #1a365d; margin-bottom: 0;" cellpadding="20">
+          <tr>
+            <td align="right" valign="top">
               <h2 style="font-size: 22pt; color: #1a365d; border-bottom: 1.5pt solid #eee; padding-bottom: 8pt; font-family: Arial; margin-top: 0;">${group.title || 'קבוצה ללא שם'}</h2>
       `;
 
@@ -59,26 +59,21 @@ export default function ReportView({ activeReport, setView }) {
 
       if (images.length > 0) {
         const cols = images.length === 1 ? 1 : (images.length <= 4 ? 2 : 3);
-        const cellWidth = Math.floor(460 / cols);
-        
-        let imgHeight = 320;
-        if (images.length > 1 && images.length <= 3) imgHeight = 200;
-        else if (images.length >= 4 && images.length <= 6) imgHeight = 140;
-        else if (images.length > 6) imgHeight = 100;
+        const imgWidth = images.length === 1 ? 250 : Math.floor(450 / cols) - 10;
 
-        groupHtml += `<table width="100%" cellspacing="5" cellpadding="0" style="table-layout: fixed; margin-top: 10pt;"><tr>`;
+        groupHtml += `<table width="100%" cellspacing="5" cellpadding="0" style="margin-top: 10pt;"><tr>`;
         
         images.forEach((img, idx) => {
           if (idx > 0 && idx % cols === 0) groupHtml += `</tr><tr>`;
           groupHtml += `
-            <td valign="top" width="${cellWidth}" style="text-align: center; border: 0.5pt solid #ddd; padding: 4pt;">
-              <img src="${img.url || img.localUrl}" height="${imgHeight}" style="display: block; margin: 0 auto; max-width: 100%;" />
+            <td valign="top" width="${Math.floor(100/cols)}%" style="text-align: center; border: 0.5pt solid #ddd; padding: 4pt;">
+              <img src="${img.url || img.localUrl}" width="${imgWidth}" style="display: block; margin: 0 auto; height: auto;" />
               ${img.note ? `<div style="background: #fdf9e7; border-right: 2.5pt solid #f1c40f; padding: 4pt; font-size: 10pt; font-family: Arial; text-align: right; margin-top: 4pt;">${img.note}</div>` : ''}
             </td>`;
         });
         
         const rem = (cols - (images.length % cols)) % cols;
-        for(let i=0; i<rem; i++) groupHtml += `<td width="${cellWidth}"></td>`;
+        for(let i=0; i<rem; i++) groupHtml += `<td></td>`;
         groupHtml += `</tr></table>`;
       }
       
