@@ -14,51 +14,30 @@ export default function ReportView({ activeReport, setView }) {
 
   const handlePrint = () => { const originalTitle = document.title; document.title = activeReport.title || 'StoreCheck_Report'; window.print(); document.title = originalTitle; };
 
-  // הגישה החדשה והפשוטה לוורד: Divs חופשיים וגובה תמונה נקי (בלי טבלאות ענק)
   const exportToDoc = () => {
     let groupsHtml = '';
-    
-    // דף שער
-    const coverHtml = `
-      <div style="border: 6pt double #1a365d; background-color: #f0f7ff; padding: 40pt; text-align: center; margin-bottom: 20pt;">
-        <div style="font-size: 14pt; color: #3498db; font-weight: bold; font-family: Arial;">DIPLOMAT GROUP</div>
-        <h1 style="font-size: 36pt; color: #1a365d; margin: 15pt 0; font-family: Arial;">${activeReport.title}</h1>
-        <div style="width: 100pt; border-top: 4pt solid #3498db; margin: 20pt auto;"></div>
-        <p style="font-size: 18pt; color: #2c3e50; font-weight: bold; font-family: Arial;">דוח סיור חנות ומדדי ביצוע</p>
-        <p style="font-size: 12pt; color: #7f8c8d; margin-top: 30pt; font-family: Arial;">הופק בתאריך: ${new Date(activeReport.createdAt).toLocaleDateString('he-IL')}</p>
-      </div>
-      <br clear="all" style="page-break-before:always;" />
-    `;
+    const coverHtml = `<div style="border: 6pt double #1a365d; background-color: #f0f7ff; padding: 40pt; text-align: center; margin-bottom: 20pt;"><div style="font-size: 14pt; color: #3498db; font-weight: bold; font-family: Arial;">DIPLOMAT GROUP</div><h1 style="font-size: 36pt; color: #1a365d; margin: 15pt 0; font-family: Arial;">${activeReport.title}</h1><div style="width: 100pt; border-top: 4pt solid #3498db; margin: 20pt auto;"></div><p style="font-size: 18pt; color: #2c3e50; font-weight: bold; font-family: Arial;">דוח סיור חנות ומדדי ביצוע</p><p style="font-size: 12pt; color: #7f8c8d; margin-top: 30pt; font-family: Arial;">הופק בתאריך: ${new Date(activeReport.createdAt).toLocaleDateString('he-IL')}</p></div><br clear="all" style="page-break-before:always;" />`;
 
     activeReport.groups.forEach((group) => {
       const allItems = group.items || [...(group.images?.map(url => ({ type: 'image', url })) || []), ...(group.notes?.map(text => ({ type: 'note', text })) || [])];
       const notes = allItems.filter(item => item.type === 'note');
       const images = allItems.filter(item => item.type === 'image');
 
-      // מסגרת קבוצה פשוטה שתופסת בדיוק את הרוחב הפנוי בדף
-      let groupHtml = `<div style="border: 2pt solid #1a365d; padding: 15pt; margin-bottom: 10pt;">`;
-      groupHtml += `<h2 style="font-size: 20pt; color: #1a365d; border-bottom: 1.5pt solid #eee; padding-bottom: 5pt; font-family: Arial; text-align: right; direction: rtl;">${group.title || 'קבוצה ללא שם'}</h2>`;
-      
-      notes.forEach(note => { 
-        groupHtml += `<div style="padding: 10pt; border-right: 5pt solid #3498db; background: #f4f7f9; margin-bottom: 10pt; font-family: Arial; font-size: 12pt; direction: rtl; text-align: right;">${note.text}</div>`; 
-      });
+      let groupHtml = `<div style="border: 2pt solid #1a365d; padding: 15pt; margin-bottom: 10pt;"><h2 style="font-size: 20pt; color: #1a365d; border-bottom: 1.5pt solid #eee; padding-bottom: 5pt; font-family: Arial; text-align: right; direction: rtl; margin-top: 0;">${group.title || 'קבוצה ללא שם'}</h2>`;
+      notes.forEach(note => { groupHtml += `<div style="padding: 10pt; border-right: 5pt solid #3498db; background: #f4f7f9; margin-bottom: 10pt; font-family: Arial; font-size: 12pt; direction: rtl; text-align: right;">${note.text}</div>`; });
 
       if (images.length > 0) {
-        // קביעת גובה התמונה לפי כמות התמונות (כדי שלא יגלשו דף)
-        let imgHeight = 350;
-        let cols = 1;
-        if (images.length === 2) { imgHeight = 250; cols = 2; }
-        else if (images.length === 3 || images.length === 4) { imgHeight = 180; cols = 2; }
-        else if (images.length > 4) { imgHeight = 130; cols = 3; }
+        let imgHeight = 280; let cols = 1;
+        if (images.length === 2) { imgHeight = 220; cols = 2; }
+        else if (images.length === 3 || images.length === 4) { imgHeight = 160; cols = 2; }
+        else if (images.length > 4) { imgHeight = 120; cols = 3; }
 
-        groupHtml += `<table width="100%" cellpadding="5" style="margin-top: 10pt;"><tr>`;
+        // הפתרון לעיוות: הסרתי את width="100%" - הטבלה "עוטפת" את התמונות בול לפי גודלן האמיתי
+        groupHtml += `<table align="center" cellspacing="10" cellpadding="0" style="margin-top: 10pt;"><tr>`;
         images.forEach((img, idx) => {
           if (idx > 0 && idx % cols === 0) groupHtml += `</tr><tr>`;
-          // רק פקודת height מועברת לוורד. זה מבטיח שמירת פרופורציה.
-          groupHtml += `<td align="center" valign="top" style="border: 1pt solid #eee; padding: 5pt;">
-            <img src="${img.url || img.localUrl}" height="${imgHeight}" />
-            ${img.note ? `<div style="background: #fdf9e7; padding: 4pt; font-size: 10pt; font-family: Arial; margin-top: 4pt; direction: rtl; text-align: right;">${img.note}</div>` : ''}
-          </td>`;
+          // רק פקודת גובה, בלי שום פקודת רוחב - מבטיח שוורד שומר על פרופורציה מקורית
+          groupHtml += `<td align="center" valign="top" style="border: 1pt solid #eee; padding: 5pt;"><img src="${img.url || img.localUrl}" height="${imgHeight}" />${img.note ? `<div style="background: #fdf9e7; padding: 4pt; font-size: 10pt; font-family: Arial; margin-top: 4pt; direction: rtl; text-align: right;">${img.note}</div>` : ''}</td>`;
         });
         const rem = (cols - (images.length % cols)) % cols;
         for(let i=0; i<rem; i++) groupHtml += `<td></td>`;
@@ -68,7 +47,7 @@ export default function ReportView({ activeReport, setView }) {
       groupsHtml += groupHtml;
     });
 
-    const fullHtml = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset='utf-8'><style>@page { size: A4; margin: 2cm; } body { font-family: Arial, sans-serif; direction: rtl; }</style></head><body>${coverHtml}${groupsHtml}</body></html>`;
+    const fullHtml = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset='utf-8'><style>@page { size: A4; margin: 1.5cm; } body { font-family: Arial, sans-serif; direction: rtl; }</style></head><body>${coverHtml}${groupsHtml}</body></html>`;
     const blob = new Blob(['\ufeff', fullHtml], { type: 'application/msword' });
     const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `${activeReport.title}.doc`; link.click();
   };
