@@ -3,27 +3,25 @@ import { ArrowRight } from 'lucide-react';
 export default function ReportView({ activeReport, setView }) {
   if (!activeReport) return null;
 
-  // פונקציה חכמה שמחשבת את הפריסה בהתאם לכמות התמונות/טקסטים
-  const getGridStyle = (count) => {
-    if (count <= 1) return { gridTemplateColumns: '1fr', gridTemplateRows: '1fr' };
-    if (count === 2) return { gridTemplateColumns: 'repeat(2, 1fr)', gridTemplateRows: '1fr' };
-    if (count <= 4) return { gridTemplateColumns: 'repeat(2, 1fr)', gridTemplateRows: 'repeat(2, 1fr)' };
-    if (count <= 6) return { gridTemplateColumns: 'repeat(3, 1fr)', gridTemplateRows: 'repeat(2, 1fr)' };
-    if (count <= 9) return { gridTemplateColumns: 'repeat(3, 1fr)', gridTemplateRows: 'repeat(3, 1fr)' };
-    if (count <= 12) return { gridTemplateColumns: 'repeat(4, 1fr)', gridTemplateRows: 'repeat(3, 1fr)' };
+  // פונקציה המחשבת את פריסת הגריד עבור התמונות בלבד
+  const getImageGridStyle = (count) => {
+    if (count === 0) return {};
+    if (count === 1) return { gridTemplateColumns: '1fr', gridTemplateRows: '1fr' };
+    if (count === 2) return { gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr' };
+    if (count === 3 || count === 4) return { gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr' };
+    if (count <= 6) return { gridTemplateColumns: '1fr 1fr 1fr', gridTemplateRows: '1fr 1fr' };
+    if (count <= 9) return { gridTemplateColumns: '1fr 1fr 1fr', gridTemplateRows: '1fr 1fr 1fr' };
     return { gridTemplateColumns: 'repeat(4, 1fr)', gridAutoRows: '1fr' };
   };
 
   return (
     <div style={reportContainerStyle} dir="rtl">
       
-      {/* הגדרות קשיחות להדפסה וליצירת PDF מושלם */}
       <style>{`
         @media print {
           body { margin: 0; padding: 0; background: white; }
           .no-print { display: none !important; }
           
-          /* דף שער */
           .report-header-page {
             height: 98vh !important;
             display: flex !important;
@@ -32,23 +30,20 @@ export default function ReportView({ activeReport, setView }) {
             align-items: center !important;
             page-break-after: always !important;
             break-after: page !important;
-            box-shadow: none !important;
-            border: none !important;
             margin: 0 !important;
           }
 
-          /* כל קבוצה היא דף אחד */
           .report-group-page {
             height: 98vh !important; 
             page-break-after: always !important;
             break-after: page !important;
             display: flex !important;
             flex-direction: column !important;
-            margin-bottom: 0 !important;
-            border: none !important;
-            box-shadow: none !important;
-            padding: 0 !important;
+            margin: 0 !important;
+            padding: 15px !important;
+            box-sizing: border-box !important;
             page-break-inside: avoid !important;
+            background: white !important;
           }
         }
       `}</style>
@@ -62,73 +57,69 @@ export default function ReportView({ activeReport, setView }) {
         </button>
       </div>
       
-      {/* דף השער של הדוח */}
+      {/* דף שער */}
       <div style={reportHeaderStyle} className="report-header-page">
-        <h1 style={{ fontSize: '40px', color: '#2c3e50', marginBottom: '10px' }}>{activeReport.title}</h1>
-        <p style={{ fontSize: '20px', color: '#7f8c8d' }}>{new Date(activeReport.createdAt).toLocaleDateString('he-IL')}</p>
+        <h1 style={{ fontSize: '42px', color: '#2c3e50', marginBottom: '10px' }}>{activeReport.title}</h1>
+        <p style={{ fontSize: '22px', color: '#7f8c8d' }}>{new Date(activeReport.createdAt).toLocaleDateString('he-IL')}</p>
       </div>
 
-      {/* קבוצות מסודרות - חלוקה לדפים */}
+      {/* דפי קבוצות */}
       {activeReport.groups && activeReport.groups.map(group => {
-        // ספירת סך הכל הפריטים בקבוצה כדי לדעת איך לחלק את הרשת
-        const itemCount = (group.items || []).length || (group.images?.length || 0) + (group.notes?.length || 0);
-        
+        // הכנת כל הפריטים (תמיכה במבנה חדש וישן)
+        const items = group.items || [];
+        const legacyImages = group.images?.map(url => ({ type: 'image', url })) || [];
+        const legacyNotes = group.notes?.map(text => ({ type: 'note', text })) || [];
+        const allItems = items.length > 0 ? items : [...legacyImages, ...legacyNotes];
+
+        // הפרדה בין הערות לתמונות לצורך הפריסה החדשה
+        const notes = allItems.filter(item => item.type === 'note');
+        const images = allItems.filter(item => item.type === 'image');
+
         return (
           <div key={group.id} className="report-group-page" style={reportGroupStyle}>
-            <h3 style={{ marginTop: 0, color: '#2c3e50', borderBottom: '2px solid #eee', paddingBottom: '10px', marginBottom: '15px', fontSize: '24px', flexShrink: 0 }}>
+            <h3 style={groupHeaderStyle}>
               {group.title || 'קבוצה ללא שם'}
             </h3>
             
-            {/* הרשת הדינמית שתופסת את כל המקום שנשאר בדף */}
-            <div style={{ display: 'grid', gap: '15px', flex: 1, minHeight: 0, ...getGridStyle(itemCount) }}>
-              
-              {/* 1. הצגת המבנה המאוחד (Unified Items) */}
-              {group.items && group.items.length > 0 && group.items.map((item, idx) => {
-                if (item.type === 'image') {
-                  return (
-                    <div key={item.id} style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, gap: '8px', backgroundColor: '#fff', padding: '10px', borderRadius: '12px', border: '1px solid #eee', boxSizing: 'border-box' }}>
-                      <img src={item.url || item.localUrl} style={{ width: '100%', height: '100%', flex: 1, objectFit: 'contain', minHeight: 0, borderRadius: '8px' }} alt="store item" />
-                      {item.note && (
-                        <p style={{ ...attachedNoteStyle, flexShrink: 0, width: '100%', boxSizing: 'border-box' }}>
-                          <strong>הערה:</strong> {item.note}
-                        </p>
-                      )}
-                    </div>
-                  );
-                } else if (item.type === 'note') {
-                  return (
-                    <div key={item.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: '15px', background: '#fff', borderRight: '5px solid #3498db', fontSize: '18px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', borderRadius: '8px', boxSizing: 'border-box' }}>
-                      <p style={{ margin: 0, textAlign: 'center', width: '100%', overflowWrap: 'break-word' }}>{item.text}</p>
-                    </div>
-                  );
-                }
-                return null;
-              })}
+            {/* מיכל הערות - תופס רוחב מלא וגובה מינימלי */}
+            {notes.length > 0 && (
+              <div style={notesContainerStyle}>
+                {notes.map((note, idx) => (
+                  <div key={note.id || idx} style={noteItemStyle}>
+                    {note.text}
+                  </div>
+                ))}
+              </div>
+            )}
 
-              {/* 2. תמיכה לאחור בדוחות ישנים (לפני העדכון) */}
-              {(!group.items || group.items.length === 0) && (group.images?.length > 0 || group.notes?.length > 0) && (
-                <>
-                  {(group.images || []).map((img, idx) => (
-                    <div key={`legacy_img_${idx}`} style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, backgroundColor: '#fff', padding: '10px', borderRadius: '12px', border: '1px solid #eee', boxSizing: 'border-box' }}>
-                      <img src={img} style={{ width: '100%', height: '100%', flex: 1, objectFit: 'contain', minHeight: 0, borderRadius: '8px' }} alt="store group" />
-                    </div>
-                  ))}
-                  {(group.notes || []).map((n, i) => (
-                    <div key={`legacy_note_${i}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: '15px', background: '#fff', borderRight: '5px solid #3498db', fontSize: '18px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', borderRadius: '8px', boxSizing: 'border-box' }}>
-                      <p style={{ margin: 0, textAlign: 'center', width: '100%', overflowWrap: 'break-word' }}>{n}</p>
-                    </div>
-                  ))}
-                </>
-              )}
+            {/* מיכל תמונות - שואב את כל יתרת הגובה של הדף */}
+            {images.length > 0 && (
+              <div style={{ 
+                ...imageGridContainerStyle, 
+                ...getImageGridStyle(images.length) 
+              }}>
+                {images.map((img, idx) => (
+                  <div key={img.id || idx} style={imageWrapperStyle}>
+                    <img 
+                      src={img.url || img.localUrl} 
+                      style={imageStyle} 
+                      alt="store" 
+                    />
+                    {img.note && (
+                      <div style={attachedNoteOverlayStyle}>
+                        <strong>הערה:</strong> {img.note}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
 
-              {/* הודעה לקבוצה ריקה */}
-              {(!group.items || group.items.length === 0) && (!group.images || group.images.length === 0) && (!group.notes || group.notes.length === 0) ? (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gridColumn: '1 / -1' }}>
-                  <p style={{ color: '#95a5a6', fontStyle: 'italic', fontSize: '18px' }}>אין פריטים בקבוצה זו</p>
-                </div>
-              ) : null}
-
-            </div>
+            {allItems.length === 0 && (
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <p style={{ color: '#95a5a6', fontStyle: 'italic' }}>אין פריטים בקבוצה זו</p>
+              </div>
+            )}
           </div>
         );
       })}
@@ -139,7 +130,21 @@ export default function ReportView({ activeReport, setView }) {
 // Styles
 const reportContainerStyle = { padding: '20px', width: '100%', maxWidth: '100%', boxSizing: 'border-box', margin: '0 auto', backgroundColor: '#f0f2f5', minHeight: '100vh' };
 const reportHeaderStyle = { textAlign: 'center', padding: '40px 20px', marginBottom: '30px', backgroundColor: 'white', borderRadius: '15px', boxShadow: '0 4px 15px rgba(0,0,0,0.05)' };
-const reportGroupStyle = { display: 'flex', flexDirection: 'column', padding: '25px', borderRadius: '15px', marginBottom: '30px', backgroundColor: '#fcfcfc', boxShadow: '0 4px 15px rgba(0,0,0,0.05)', boxSizing: 'border-box' };
-const attachedNoteStyle = { padding: '10px 15px', backgroundColor: '#f0f3f4', borderRight: '4px solid #f1c40f', borderRadius: '8px', fontSize: '15px', margin: 0, display: 'inline-block', color: '#2c3e50', overflow: 'hidden', textOverflow: 'ellipsis' };
+const reportGroupStyle = { display: 'flex', flexDirection: 'column', padding: '20px', borderRadius: '15px', marginBottom: '30px', backgroundColor: 'white', boxShadow: '0 4px 15px rgba(0,0,0,0.05)', boxSizing: 'border-box' };
+const groupHeaderStyle = { marginTop: 0, color: '#2c3e50', borderBottom: '2px solid #eee', paddingBottom: '10px', marginBottom: '10px', fontSize: '24px', flexShrink: 0 };
+
+const notesContainerStyle = { display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '10px', flexShrink: 0 };
+const noteItemStyle = { padding: '10px 15px', background: '#fff', borderRight: '5px solid #3498db', fontSize: '16px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', borderRadius: '4px', width: '100%', boxSizing: 'border-box' };
+
+const imageGridContainerStyle = { display: 'grid', gap: '2px', flex: 1, minHeight: 0 }; // gap מינימלי ו-flex:1 לניצול שטח
+const imageWrapperStyle = { position: 'relative', height: '100%', width: '100%', minHeight: 0, backgroundColor: '#fdfdfd', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' };
+const imageStyle = { width: '100%', height: '100%', objectFit: 'contain', display: 'block' };
+
+const attachedNoteOverlayStyle = { 
+  position: 'absolute', bottom: 0, left: 0, right: 0, padding: '5px 10px', 
+  backgroundColor: 'rgba(255, 255, 255, 0.85)', borderTop: '2px solid #f1c40f', 
+  fontSize: '12px', color: '#2c3e50', maxHeight: '25%', overflow: 'hidden' 
+};
+
 const printBtnStyle = { padding: '10px 20px', backgroundColor: '#27ae60', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', fontSize: '16px', cursor: 'pointer' };
 const backBtnStyle = { border: 'none', background: 'none', color: '#3498db', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 'bold', fontSize: '16px' };
