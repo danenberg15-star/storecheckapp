@@ -28,7 +28,8 @@ export default function ReportView({ activeReport, setView }) {
       <style>
         body { font-family: Arial, sans-serif; direction: rtl; }
         img { max-width: 100%; height: auto; }
-        .group-title { font-size: 20pt; color: #2c3e50; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-top: 30px; }
+        .report-group-page { border: 1px solid #2c3e50; padding: 15px; margin-bottom: 20px; }
+        .group-title { font-size: 20pt; color: #2c3e50; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-top: 10px; }
         .note-item { padding: 10px; border-right: 5px solid #3498db; background: #f9f9f9; margin-bottom: 5px; }
         .image-note { color: #2c3e50; background: #f1c40f22; border-right: 3px solid #f1c40f; padding: 5px; font-size: 10pt; }
       </style>
@@ -79,6 +80,7 @@ export default function ReportView({ activeReport, setView }) {
             box-sizing: border-box !important;
             page-break-inside: avoid !important;
             background: white !important;
+            border: 1px solid #2c3e50 !important;
           }
         }
       `}</style>
@@ -166,7 +168,7 @@ export default function ReportView({ activeReport, setView }) {
 // Styles
 const reportContainerStyle = { padding: '20px', width: '100%', maxWidth: '100%', boxSizing: 'border-box', margin: '0 auto', backgroundColor: '#f0f2f5', minHeight: '100vh' };
 const reportHeaderStyle = { textAlign: 'center', padding: '40px 20px', marginBottom: '30px', backgroundColor: 'white', borderRadius: '15px', boxShadow: '0 4px 15px rgba(0,0,0,0.05)' };
-const reportGroupStyle = { display: 'flex', flexDirection: 'column', padding: '20px', borderRadius: '15px', marginBottom: '30px', backgroundColor: 'white', boxShadow: '0 4px 15px rgba(0,0,0,0.05)', boxSizing: 'border-box' };
+const reportGroupStyle = { display: 'flex', flexDirection: 'column', padding: '20px', borderRadius: '15px', marginBottom: '30px', backgroundColor: 'white', boxShadow: '0 4px 15px rgba(0,0,0,0.05)', boxSizing: 'border-box', border: '1px solid #2c3e50' };
 const groupHeaderStyle = { marginTop: 0, color: '#2c3e50', borderBottom: '2px solid #eee', paddingBottom: '10px', marginBottom: '10px', fontSize: '24px', flexShrink: 0 };
 const notesContainerStyle = { display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '10px', flexShrink: 0 };
 const noteItemStyle = { padding: '10px 15px', background: '#fff', borderRight: '5px solid #3498db', fontSize: '16px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', borderRadius: '4px', width: '100%', boxSizing: 'border-box' };
