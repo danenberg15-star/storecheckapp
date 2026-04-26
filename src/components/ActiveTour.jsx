@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { Camera, FileText, Loader, Edit2, Check, ArrowRight, GripVertical, Plus, Trash2, X, Link, Save } from 'lucide-react';
+import { Camera, FileText, Loader, Edit2, Check, ArrowRight, GripVertical, Plus, Trash2, X, Link, Save, ChevronUp, ChevronDown } from 'lucide-react';
 import { db } from '../firebase';
 import { doc, updateDoc } from 'firebase/firestore';
 import AnnotationModal from './AnnotationModal';
@@ -43,6 +43,31 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
 
   const deleteEmptyGroup = async (groupId) => {
     const newGroups = (activeReport.groups || []).filter(g => g.id !== groupId);
+    const updatedReport = { ...activeReport, groups: newGroups, updatedAt: new Date().toISOString() };
+    setActiveReport(updatedReport);
+    if (isOnline) await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, updatedAt: updatedReport.updatedAt });
+  };
+
+  // === הזזת קבוצות למעלה ולמטה ===
+  const moveGroupUp = async (index) => {
+    if (index === 0) return;
+    let newGroups = JSON.parse(JSON.stringify(activeReport.groups || []));
+    const temp = newGroups[index - 1];
+    newGroups[index - 1] = newGroups[index];
+    newGroups[index] = temp;
+    
+    const updatedReport = { ...activeReport, groups: newGroups, updatedAt: new Date().toISOString() };
+    setActiveReport(updatedReport);
+    if (isOnline) await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, updatedAt: updatedReport.updatedAt });
+  };
+
+  const moveGroupDown = async (index) => {
+    let newGroups = JSON.parse(JSON.stringify(activeReport.groups || []));
+    if (index === newGroups.length - 1) return;
+    const temp = newGroups[index + 1];
+    newGroups[index + 1] = newGroups[index];
+    newGroups[index] = temp;
+    
     const updatedReport = { ...activeReport, groups: newGroups, updatedAt: new Date().toISOString() };
     setActiveReport(updatedReport);
     if (isOnline) await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, updatedAt: updatedReport.updatedAt });
@@ -179,7 +204,6 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     if(e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
   };
 
-  // שמירה מאוחדת להערה חדשה או עריכה קיימת
   const saveNoteEdit = async () => {
     if (!editingNote.text.trim()) { setEditingNote(null); return; }
     
@@ -188,11 +212,9 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     
     if (gIndex > -1) {
       if (editingNote.index === -1) {
-        // הוספת הערה חדשה
         if (!newGroups[gIndex].items) newGroups[gIndex].items = [];
         newGroups[gIndex].items.push({ id: `note_${Date.now()}`, type: 'note', text: editingNote.text.trim() });
       } else {
-        // עריכת הערה קיימת
         const item = newGroups[gIndex].items[editingNote.index];
         if (item.type === 'note') item.text = editingNote.text.trim();
         else if (item.type === 'image') item.note = editingNote.text.trim();
@@ -288,7 +310,7 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
         </div>
       </div>
 
-      {(activeReport.groups || []).map((group) => (
+      {(activeReport.groups || []).map((group, groupIndex) => (
         <div 
           key={group.id} 
           data-container-group-id={group.id}
@@ -297,6 +319,25 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
           style={{ ...groupZoneStyle, border: dragOverIndex === `${group.id}_container` ? '2px dashed #3498db' : '1px solid transparent' }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #eee', paddingBottom: '10px', marginBottom: '15px' }}>
+            
+            {/* כפתורי שינוי סדר קבוצה */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginLeft: '10px' }}>
+              <button 
+                onClick={() => moveGroupUp(groupIndex)} 
+                disabled={groupIndex === 0} 
+                style={{ ...moveGroupBtnStyle, cursor: groupIndex === 0 ? 'default' : 'pointer', color: groupIndex === 0 ? '#ecf0f1' : '#95a5a6' }}
+              >
+                <ChevronUp size={20} />
+              </button>
+              <button 
+                onClick={() => moveGroupDown(groupIndex)} 
+                disabled={groupIndex === (activeReport.groups || []).length - 1} 
+                style={{ ...moveGroupBtnStyle, cursor: groupIndex === (activeReport.groups || []).length - 1 ? 'default' : 'pointer', color: groupIndex === (activeReport.groups || []).length - 1 ? '#ecf0f1' : '#95a5a6' }}
+              >
+                <ChevronDown size={20} />
+              </button>
+            </div>
+
             {editingGroupTitle === group.id ? (
               <div style={{ display: 'flex', gap: '10px', flex: 1, alignItems: 'center' }}>
                 <input value={editGroupTitleText} onChange={e => setEditGroupTitleText(e.target.value)} style={editInputStyle} />
@@ -312,7 +353,6 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
               <button onClick={() => { setTargetGroupId(group.id); fileInputRef.current.click(); }} style={miniActionBtnStyle}>
                 {isUploading && targetGroupId === group.id ? <Loader className="spin" size={16} /> : <Camera size={16} color="#34495e" />}
               </button>
-              {/* כפתור הוספת הערה עכשיו פותח את החלון הגדול */}
               <button onClick={() => setEditingNote({ groupId: group.id, index: -1, text: '' })} style={miniActionBtnStyle} title="הוסף הערה לקבוצה זו">
                 <FileText size={16} color="#34495e" />
               </button>
@@ -325,7 +365,6 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
         </div>
       ))}
 
-      {/* חלון עריכה/הוספה גדול (Modal) */}
       {editingNote && (
         <div style={fullModalOverlayStyle}>
           <div style={fullModalContentStyle}>
@@ -351,6 +390,7 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
 }
 
 // Styles
+const moveGroupBtnStyle = { background: 'none', border: 'none', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' };
 const fullModalOverlayStyle = { position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 10000, padding: '20px', boxSizing: 'border-box' };
 const fullModalContentStyle = { backgroundColor: 'white', width: '100%', maxWidth: '500px', borderRadius: '15px', display: 'flex', flexDirection: 'column', padding: '20px', boxSizing: 'border-box', boxShadow: '0 10px 30px rgba(0,0,0,0.2)' };
 const fullModalHeaderStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', borderBottom: '1px solid #eee', paddingBottom: '10px' };
