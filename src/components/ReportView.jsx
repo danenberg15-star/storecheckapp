@@ -21,7 +21,6 @@ export default function ReportView({ activeReport, setView }) {
     document.title = originalTitle;
   };
 
-  // פונקציה לבניית קובץ וורד מבוסס טבלאות (הפתרון לעיוות)
   const exportToDoc = () => {
     let groupsHtml = '';
 
@@ -34,16 +33,13 @@ export default function ReportView({ activeReport, setView }) {
       const notes = allItems.filter(item => item.type === 'note');
       const images = allItems.filter(item => item.type === 'image');
 
-      // בניית דף לקבוצה
       let groupHtml = `<div class="report-group-page">`;
       groupHtml += `<h2 class="group-title">${group.title || 'קבוצה ללא שם'}</h2>`;
 
-      // הוספת הערות ברוחב מלא
       notes.forEach(note => {
         groupHtml += `<div class="note-item">${note.text}</div>`;
       });
 
-      // בניית רשת תמונות באמצעות טבלה (הדרך שוורד מבין)
       if (images.length > 0) {
         const cols = images.length === 1 ? 1 : (images.length <= 4 ? 2 : 3);
         groupHtml += `<table width="100%" cellspacing="2" cellpadding="0" style="table-layout: fixed;"><tr>`;
@@ -57,7 +53,6 @@ export default function ReportView({ activeReport, setView }) {
             </td>`;
         });
         
-        // השלמת תאים ריקים לסגירת הטבלה
         const remaining = (cols - (images.length % cols)) % cols;
         for(let i=0; i<remaining; i++) groupHtml += `<td></td>`;
         
@@ -79,7 +74,7 @@ export default function ReportView({ activeReport, setView }) {
         .image-note { color: #2c3e50; background: #f1c40f22; border-right: 3px solid #f1c40f; padding: 5px; font-size: 11pt; margin-top: 5px; text-align: right; }
       </style>
       </head><body>
-      <div style="text-align: center; margin-bottom: 50px;">
+      <div style="border: 2px solid #2c3e50; padding: 50px; text-align: center; margin-bottom: 50px;">
         <h1 style="font-size: 36pt;">${activeReport.title}</h1>
         <p style="font-size: 18pt; color: #7f8c8d;">${new Date(activeReport.createdAt).toLocaleDateString('he-IL')}</p>
       </div>
@@ -106,30 +101,26 @@ export default function ReportView({ activeReport, setView }) {
         @media print {
           body { margin: 0; padding: 0; background: white; }
           .no-print { display: none !important; }
-          
-          .report-header-page {
-            height: 98vh !important;
-            display: flex !important;
-            flex-direction: column !important;
-            justify-content: center !important;
-            align-items: center !important;
-            page-break-after: always !important;
-            break-after: page !important;
-            margin: 0 !important;
-          }
 
           .report-group-page {
-            height: 98vh !important; 
+            height: 96vh !important; 
             page-break-after: always !important;
             break-after: page !important;
             display: flex !important;
             flex-direction: column !important;
             margin: 0 !important;
-            padding: 15px !important;
+            padding: 20px !important;
             box-sizing: border-box !important;
             page-break-inside: avoid !important;
             background: white !important;
             border: 2px solid #2c3e50 !important;
+          }
+
+          /* דף השער משתמש באותו מבנה של קבוצה כדי למנוע כפל דפים */
+          .report-header-as-group {
+            justify-content: center !important;
+            align-items: center !important;
+            text-align: center !important;
           }
         }
       `}</style>
@@ -149,11 +140,13 @@ export default function ReportView({ activeReport, setView }) {
       </div>
       
       <div id="printable-report-content">
-        <div style={reportHeaderStyle} className="report-header-page">
+        {/* דף שער - מוגדר עכשיו כקבוצה לכל דבר ועניין */}
+        <div style={{ ...reportGroupStyle, justifyContent: 'center', alignItems: 'center', textAlign: 'center' }} className="report-group-page report-header-as-group">
           <h1 style={{ fontSize: '42px', color: '#2c3e50', marginBottom: '10px' }}>{activeReport.title}</h1>
           <p style={{ fontSize: '22px', color: '#7f8c8d' }}>{new Date(activeReport.createdAt).toLocaleDateString('he-IL')}</p>
         </div>
 
+        {/* דפי קבוצות */}
         {activeReport.groups && activeReport.groups.map(group => {
           const items = group.items || [];
           const legacyImages = group.images?.map(url => ({ type: 'image', url })) || [];
@@ -213,7 +206,7 @@ export default function ReportView({ activeReport, setView }) {
 // Styles (UI)
 const reportContainerStyle = { padding: '20px', width: '100%', maxWidth: '100%', boxSizing: 'border-box', margin: '0 auto', backgroundColor: '#f0f2f5', minHeight: '100vh' };
 const reportHeaderStyle = { textAlign: 'center', padding: '40px 20px', marginBottom: '30px', backgroundColor: 'white', borderRadius: '15px', boxShadow: '0 4px 15px rgba(0,0,0,0.05)' };
-const reportGroupStyle = { display: 'flex', flexDirection: 'column', padding: '20px', borderRadius: '15px', marginBottom: '30px', backgroundColor: 'white', boxShadow: '0 4px 15px rgba(0,0,0,0.05)', boxSizing: 'border-box', border: '2px solid #2c3e50' };
+const reportGroupStyle = { display: 'flex', flexDirection: 'column', padding: '20px', borderRadius: '15px', marginBottom: '30px', backgroundColor: 'white', boxShadow: '0 4px 15px rgba(0,0,0,0.05)', boxSizing: 'border-box', border: '2px solid #2c3e50', minHeight: '300px' };
 const groupHeaderStyle = { marginTop: 0, color: '#2c3e50', borderBottom: '2px solid #eee', paddingBottom: '10px', marginBottom: '10px', fontSize: '24px', flexShrink: 0 };
 const notesContainerStyle = { display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '10px', flexShrink: 0 };
 const noteItemStyle = { padding: '10px 15px', background: '#fff', borderRight: '5px solid #3498db', fontSize: '16px', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', borderRadius: '4px', width: '100%', boxSizing: 'border-box' };
