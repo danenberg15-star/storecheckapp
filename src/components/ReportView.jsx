@@ -27,17 +27,17 @@ export default function ReportView({ activeReport, setView }) {
       notes.forEach(note => { groupHtml += `<div style="padding: 10pt; border-right: 5pt solid #3498db; background: #f4f7f9; margin-bottom: 10pt; font-family: Arial; font-size: 12pt; direction: rtl; text-align: right;">${note.text}</div>`; });
 
       if (images.length > 0) {
-        let imgHeight = 280; let cols = 1;
-        if (images.length === 2) { imgHeight = 220; cols = 2; }
-        else if (images.length === 3 || images.length === 4) { imgHeight = 160; cols = 2; }
-        else if (images.length > 4) { imgHeight = 120; cols = 3; }
+        // החישוב המתמטי: רק רוחב מדויק. וורד יסדר את הגובה אוטומטית בפרופורציה מושלמת
+        let cols = 1; let imgWidth = 300;
+        if (images.length === 2) { cols = 2; imgWidth = 200; }
+        else if (images.length === 3 || images.length === 4) { cols = 2; imgWidth = 160; }
+        else if (images.length > 4) { cols = 3; imgWidth = 120; }
 
-        // הפתרון לעיוות: הסרתי את width="100%" - הטבלה "עוטפת" את התמונות בול לפי גודלן האמיתי
         groupHtml += `<table align="center" cellspacing="10" cellpadding="0" style="margin-top: 10pt;"><tr>`;
         images.forEach((img, idx) => {
           if (idx > 0 && idx % cols === 0) groupHtml += `</tr><tr>`;
-          // רק פקודת גובה, בלי שום פקודת רוחב - מבטיח שוורד שומר על פרופורציה מקורית
-          groupHtml += `<td align="center" valign="top" style="border: 1pt solid #eee; padding: 5pt;"><img src="${img.url || img.localUrl}" height="${imgHeight}" />${img.note ? `<div style="background: #fdf9e7; padding: 4pt; font-size: 10pt; font-family: Arial; margin-top: 4pt; direction: rtl; text-align: right;">${img.note}</div>` : ''}</td>`;
+          // רק תכונת width. בלי height ובלי אחוזים.
+          groupHtml += `<td align="center" valign="top" style="border: 1pt solid #eee; padding: 5pt;"><img src="${img.url || img.localUrl}" width="${imgWidth}" />${img.note ? `<div style="background: #fdf9e7; padding: 4pt; font-size: 10pt; font-family: Arial; margin-top: 4pt; direction: rtl; text-align: right;">${img.note}</div>` : ''}</td>`;
         });
         const rem = (cols - (images.length % cols)) % cols;
         for(let i=0; i<rem; i++) groupHtml += `<td></td>`;
