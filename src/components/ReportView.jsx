@@ -14,13 +14,37 @@ export default function ReportView({ activeReport, setView }) {
 
   const handlePrint = () => { const o = document.title; document.title = activeReport.title || 'StoreCheck_Report'; window.print(); document.title = o; };
 
-  // פונקציה למדידת מידות התמונה המקוריות בזיכרון לפני הייצוא לוורד
   const getImgSize = (src) => new Promise(resolve => {
-    const img = new Image();
-    img.onload = () => resolve({ w: img.width, h: img.height });
-    img.onerror = () => resolve({ w: 400, h: 300 }); // גיבוי למקרה שגיאה
-    img.src = src;
+    const img = new Image(); img.onload = () => resolve({ w: img.width, h: img.height }); img.onerror = () => resolve({ w: 400, h: 300 }); img.src = src;
   });
+
+  // לוגיקת הצימוד החכם: קריאת סדר הפריטים וחיבור הערות לתמונות שמעליהן
+  const processGroupItems = (group) => {
+    const generalNotes = [];
+    const processedImages = [];
+    let currentImg = null;
+
+    if (group.items && group.items.length > 0) {
+      group.items.forEach(item => {
+        if (item.type === 'image') {
+          currentImg = { ...item, coupledText: item.note ? [item.note] : [] };
+          processedImages.push(currentImg);
+        } else if (item.type === 'note' || item.type === 'text') {
+          if (currentImg) {
+            // אם ההערה הגיעה אחרי תמונה - זה צימוד!
+            currentImg.coupledText.push(item.text);
+          } else {
+            // אם ההערה בתחילת הקבוצה - זו הערה כללית
+            generalNotes.push(item);
+          }
+        }
+      });
+    } else {
+      (group.notes || []).forEach(text => generalNotes.push({ text }));
+      (group.images || []).forEach(url => processedImages.push({ url, coupledText: [] }));
+    }
+    return { generalNotes, processedImages };
+  };
 
   const exportToDoc = async () => {
     setIsExporting(true);
@@ -29,39 +53,37 @@ export default function ReportView({ activeReport, setView }) {
       const cover = `<table width="480" align="center" style="border: 6pt double #1a365d; background-color: #f0f7ff; margin-bottom: 30pt;" cellpadding="40"><tr><td align="center"><div style="font-size: 14pt; color: #3498db; font-weight: bold; font-family: Arial;">DIPLOMAT GROUP</div><h1 style="font-size: 32pt; color: #1a365d; font-family: Arial;">${activeReport.title}</h1><div style="width: 100pt; border-top: 3pt solid #3498db; margin: 15pt auto;"></div><p style="font-size: 18pt; color: #2c3e50; font-weight: bold; font-family: Arial;">דוח סיור חנות מקצועי</p><p style="font-size: 12pt; color: #7f8c8d; font-family: Arial;">תאריך: ${new Date(activeReport.createdAt).toLocaleDateString('he-IL')}</p></td></tr></table><br style="page-break-before:always;" />`;
 
       for (const group of activeReport.groups) {
-        const items = group.items || [...(group.images?.map(url => ({ type: 'image', url })) || []), ...(group.notes?.map(text => ({ type: 'note', text })) || [])];
-        const notes = items.filter(i => i.type === 'note');
-        const images = items.filter(i => i.type === 'image');
+        const { generalNotes, processedImages } = processGroupItems(group);
 
         let gHtml = `<table width="480" align="center" style="border: 2pt solid #1a365d; table-layout: fixed;" cellpadding="15"><tr><td align="right" valign="top">`;
         gHtml += `<h2 style="font-size: 18pt; color: #1a365d; border-bottom: 1.5pt solid #eee; padding-bottom: 5pt; font-family: Arial; margin-top: 0; text-align: right; direction: rtl;">${group.title || 'קבוצה'}</h2>`;
-        notes.forEach(n => { gHtml += `<div style="padding: 10pt; border-right: 5pt solid #3498db; background: #f4f7f9; margin-bottom: 10pt; font-family: Arial; font-size: 12pt; direction: rtl; text-align: right;">${n.text}</div>`; });
+        
+        generalNotes.forEach(n => { gHtml += `<div style="padding: 10pt; border-right: 5pt solid #3498db; background: #f4f7f9; margin-bottom: 10pt; font-family: Arial; font-size: 12pt; direction: rtl; text-align: right;">${n.text}</div>`; });
 
-        if (images.length > 0) {
-          // הגדרת המרחב המקסימלי המותר לכל תמונה בהתאם לכמות
+        if (processedImages.length > 0) {
           let cols = 1, maxW = 420, maxH = 450;
-          if (images.length === 2) { cols = 2; maxW = 200; maxH = 400; }
-          else if (images.length <= 4) { cols = 2; maxW = 200; maxH = 200; }
+          if (processedImages.length === 2) { cols = 2; maxW = 200; maxH = 400; }
+          else if (processedImages.length <= 4) { cols = 2; maxW = 200; maxH = 200; }
           else { cols = 3; maxW = 130; maxH = 150; }
 
           gHtml += `<table width="100%" cellspacing="5" cellpadding="0"><tr>`;
-          for (let idx = 0; idx < images.length; idx++) {
-            const img = images[idx];
+          for (let idx = 0; idx < processedImages.length; idx++) {
+            const img = processedImages[idx];
             if (idx > 0 && idx % cols === 0) gHtml += `</tr><tr>`;
             
-            // חישוב מתמטי מדויק - שמירת פרופורציה בתוך המסגרת המותרת!
             const size = await getImgSize(img.url || img.localUrl);
             const ratio = size.w / size.h;
-            let targetW = maxW;
-            let targetH = targetW / ratio;
+            let targetW = maxW; let targetH = targetW / ratio;
             if (targetH > maxH) { targetH = maxH; targetW = targetH * ratio; }
+
+            const noteTxt = img.coupledText.length > 0 ? `<div style="background: #fdf9e7; padding: 4pt; font-size: 9pt; font-family: Arial; margin-top: 4pt; direction: rtl; text-align: right; border-right: 2pt solid #f1c40f;">${img.coupledText.join('<br/>')}</div>` : '';
 
             gHtml += `<td align="center" valign="top" style="border: 0.5pt solid #eee; padding: 5pt;">
               <img src="${img.url || img.localUrl}" width="${Math.round(targetW)}" height="${Math.round(targetH)}" style="display: block; margin: 0 auto;" />
-              ${img.note ? `<div style="background: #fdf9e7; padding: 4pt; font-size: 9pt; font-family: Arial; margin-top: 4pt; direction: rtl; text-align: right; border-right: 2pt solid #f1c40f;">${img.note}</div>` : ''}
+              ${noteTxt}
             </td>`;
           }
-          const rem = (cols - (images.length % cols)) % cols;
+          const rem = (cols - (processedImages.length % cols)) % cols;
           for(let i=0; i<rem; i++) gHtml += `<td></td>`;
           gHtml += `</tr></table>`;
         }
@@ -72,9 +94,7 @@ export default function ReportView({ activeReport, setView }) {
       const body = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset='utf-8'><style>@page { size: A4; margin: 40pt; } body { font-family: Arial, sans-serif; direction: rtl; }</style></head><body>${cover}${groupsHtml}</body></html>`;
       const blob = new Blob(['\ufeff', body], { type: 'application/msword' });
       const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `${activeReport.title}.doc`; link.click();
-    } finally {
-      setIsExporting(false);
-    }
+    } finally { setIsExporting(false); }
   };
 
   return (
@@ -84,7 +104,7 @@ export default function ReportView({ activeReport, setView }) {
         <button onClick={() => setView('tour')} style={backBtnStyle}><ArrowRight size={20} /> חזרה</button>
         <div style={{ display: 'flex', gap: '10px' }}>
           <button onClick={exportToDoc} style={{...docsBtnStyle, opacity: isExporting ? 0.7 : 1}} disabled={isExporting}>
-            {isExporting ? <span style={{display:'flex', alignItems:'center', gap:'5px'}}><Loader size={16} className="spin" /> מחשב תמונות...</span> : 'ייצא ל-Docs'}
+            {isExporting ? <span style={{display:'flex', alignItems:'center', gap:'5px'}}><Loader size={16} className="spin" /> מחשב...</span> : 'ייצא ל-Docs'}
           </button>
           <button onClick={handlePrint} style={printBtnStyle}>שמור PDF</button>
         </div>
@@ -97,14 +117,26 @@ export default function ReportView({ activeReport, setView }) {
           <p style={{ fontSize: '26px', color: '#2c3e50', fontWeight: 'bold' }}>דוח סיור חנות ומדדי ביצוע</p>
           <p style={{ fontSize: '18px', color: '#7f8c8d', marginTop: '50px' }}>{new Date(activeReport.createdAt).toLocaleDateString('he-IL')}</p>
         </div>
-        {activeReport.groups && activeReport.groups.map(g => {
-          const items = g.items || [...(g.images?.map(u => ({ type: 'image', url: u })) || []), ...(g.notes?.map(t => ({ type: 'note', text: t })) || [])];
-          const notes = items.filter(i => i.type === 'note'); const images = items.filter(i => i.type === 'image');
+        {activeReport.groups && activeReport.groups.map(group => {
+          const { generalNotes, processedImages } = processGroupItems(group);
           return (
-            <div key={g.id} className="report-group-page" style={reportGroupStyle}>
-              <h3 style={groupHeaderStyle}>{g.title || 'קבוצה'}</h3>
-              {notes.length > 0 && <div style={notesContainerStyle}>{notes.map((n, i) => <div key={i} style={noteItemStyle}>{n.text}</div>)}</div>}
-              {images.length > 0 && <div style={{ ...imageGridContainerStyle, ...getImageGridStyle(images.length) }}>{images.map((img, i) => <div key={i} style={imageWrapperStyle}><img src={img.url || img.localUrl} style={imageStyle} alt="store" />{img.note && <div style={attachedNoteOverlayStyle}><strong>הערה:</strong> {img.note}</div>}</div>)}</div>}
+            <div key={group.id} className="report-group-page" style={reportGroupStyle}>
+              <h3 style={groupHeaderStyle}>{group.title || 'קבוצה'}</h3>
+              {generalNotes.length > 0 && <div style={notesContainerStyle}>{generalNotes.map((n, i) => <div key={i} style={noteItemStyle}>{n.text}</div>)}</div>}
+              {processedImages.length > 0 && (
+                <div style={{ ...imageGridContainerStyle, ...getImageGridStyle(processedImages.length) }}>
+                  {processedImages.map((img, i) => (
+                    <div key={i} style={imageWrapperStyle}>
+                      <img src={img.url || img.localUrl} style={imageStyle} alt="store" />
+                      {img.coupledText.length > 0 && (
+                        <div style={attachedNoteOverlayStyle}>
+                          <strong>הערה:</strong> {img.coupledText.join(' | ')}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           );
         })}
