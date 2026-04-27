@@ -8,8 +8,7 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
   const [isUploading, setIsUploading] = useState(false);
   const [targetGroupId, setTargetGroupId] = useState(null);
   
-  // ניהול עריכה והוספת טקסט בחלון גדול (Modal)
-  const [editingNote, setEditingNote] = useState(null); // { groupId, index, text } (index -1 means new note)
+  const [editingNote, setEditingNote] = useState(null); 
   
   const draggedItemRef = useRef(null); 
   const longPressTimer = useRef(null);
@@ -48,7 +47,6 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     if (isOnline) await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, updatedAt: updatedReport.updatedAt });
   };
 
-  // === הזזת קבוצות למעלה ולמטה ===
   const moveGroupUp = async (index) => {
     if (index === 0) return;
     let newGroups = JSON.parse(JSON.stringify(activeReport.groups || []));
@@ -98,7 +96,6 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     }
   };
 
-  // === מנוע גרירה ומיקום ===
   const executeDrop = async (sourceGroupId, sourceIndex, targetGroupId, targetIndex, isOverImage) => {
     let newGroups = JSON.parse(JSON.stringify(activeReport.groups || []));
     const sGIdx = newGroups.findIndex(g => g.id === sourceGroupId);
@@ -140,7 +137,6 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
     if (isOnline) await updateDoc(doc(db, "reports", activeReport.id), { groups: newGroups, updatedAt: updatedReport.updatedAt });
   };
 
-  // === מגע ולחיצה ארוכה ===
   const handleTouchStart = (e, sourceGroupId, index, itemId) => {
     const touch = e.touches[0];
     touchStartPos.current = { x: touch.clientX, y: touch.clientY };
@@ -257,11 +253,21 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
         <div {...commonProps} style={{ ...draggableImgWrapperStyle, ...itemStyle, border: isDragOver ? '3px solid #3498db' : '2px solid transparent' }}>
           <img src={item.url || item.localUrl} style={draggableImgStyle} alt="store item" />
           <button onClick={() => deleteItem(groupId, index)} style={deleteImgOverlayBtnStyle}><X size={14}/></button>
-          {item.note && (
+          
+          {/* התיקון: כפתור ברור להוספת הערה צמודה אם אין, או תצוגת ההערה אם יש */}
+          {!item.note ? (
+            <button 
+              onClick={() => setEditingNote({ groupId, index, text: '' })} 
+              style={addNoteToImgBtnStyle}
+              title="הצמד הערה לתמונה"
+            >
+              <FileText size={12} />
+            </button>
+          ) : (
             <div style={attachedNoteBadgeStyle}>
               <span style={attachedNoteTextStyle}>{item.note}</span>
-              <button onClick={() => detachNoteFromImage(groupId, index)} style={detachBtnStyle}><Link size={10} /></button>
-              <button onClick={() => setEditingNote({ groupId, index, text: item.note })} style={editNoteOnImgStyle}><Edit2 size={10} /></button>
+              <button onClick={() => detachNoteFromImage(groupId, index)} style={detachBtnStyle} title="נתק הערה"><Link size={10} /></button>
+              <button onClick={() => setEditingNote({ groupId, index, text: item.note })} style={editNoteOnImgStyle} title="ערוך הערה"><Edit2 size={10} /></button>
             </div>
           )}
         </div>
@@ -320,7 +326,6 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #eee', paddingBottom: '10px', marginBottom: '15px' }}>
             
-            {/* כפתורי שינוי סדר קבוצה */}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginLeft: '10px' }}>
               <button 
                 onClick={() => moveGroupUp(groupIndex)} 
@@ -350,10 +355,10 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
               </div>
             )}
             <div style={{ display: 'flex', gap: '6px' }}>
-              <button onClick={() => { setTargetGroupId(group.id); fileInputRef.current.click(); }} style={miniActionBtnStyle}>
+              <button onClick={() => { setTargetGroupId(group.id); fileInputRef.current.click(); }} style={miniActionBtnStyle} title="הוסף תמונה לקבוצה">
                 {isUploading && targetGroupId === group.id ? <Loader className="spin" size={16} /> : <Camera size={16} color="#34495e" />}
               </button>
-              <button onClick={() => setEditingNote({ groupId: group.id, index: -1, text: '' })} style={miniActionBtnStyle} title="הוסף הערה לקבוצה זו">
+              <button onClick={() => setEditingNote({ groupId: group.id, index: -1, text: '' })} style={miniActionBtnStyle} title="הוסף הערה כללית לקבוצה">
                 <FileText size={16} color="#34495e" />
               </button>
             </div>
@@ -369,14 +374,14 @@ export default function ActiveTour({ user, isOnline, activeReport, setActiveRepo
         <div style={fullModalOverlayStyle}>
           <div style={fullModalContentStyle}>
             <div style={fullModalHeaderStyle}>
-              <h3 style={{ margin: 0 }}>{editingNote.index === -1 ? 'הוספת הערה חדשה' : 'עריכת הערה'}</h3>
-              <button onClick={() => setEditingNote(null)} style={{ background: 'none', border: 'none' }}><X size={24} /></button>
+              <h3 style={{ margin: 0 }}>{editingNote.index === -1 ? 'הוספת הערה חדשה' : 'עריכת הערה לתמונה'}</h3>
+              <button onClick={() => setEditingNote(null)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={24} /></button>
             </div>
             <textarea 
               value={editingNote.text} 
               onChange={(e) => setEditingNote({...editingNote, text: e.target.value})} 
               style={fullModalTextareaStyle}
-              placeholder="הקלד כאן או השתמש במיקרופון המקלדת..."
+              placeholder="הקלד כאן..."
               autoFocus
             />
             <button onClick={saveNoteEdit} style={fullModalSaveBtnStyle}>
@@ -400,18 +405,21 @@ const fullModalSaveBtnStyle = { marginTop: '20px', padding: '15px', backgroundCo
 const groupZoneStyle = { display: 'flex', flexDirection: 'column', padding: '20px', backgroundColor: 'white', borderRadius: '15px', marginBottom: '25px', boxShadow: '0 2px 8px rgba(0,0,0,0.05)' };
 const attachedNoteBadgeStyle = { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(44, 62, 80, 0.85)', color: 'white', padding: '4px 8px', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px' };
 const attachedNoteTextStyle = { flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
-const detachBtnStyle = { background: 'none', border: 'none', color: '#3498db', padding: '2px' };
-const editNoteOnImgStyle = { background: 'none', border: 'none', color: '#f1c40f', padding: '2px' };
+const detachBtnStyle = { background: 'none', border: 'none', color: '#3498db', padding: '2px', cursor: 'pointer' };
+const editNoteOnImgStyle = { background: 'none', border: 'none', color: '#f1c40f', padding: '2px', cursor: 'pointer' };
+
+// עיצוב כפתור ההצמדה החדש!
+const addNoteToImgBtnStyle = { position: 'absolute', bottom: '4px', left: '4px', backgroundColor: 'rgba(52, 152, 219, 0.95)', color: 'white', border: 'none', borderRadius: '50%', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 10, boxShadow: '0 2px 5px rgba(0,0,0,0.3)' };
+
 const miniActionBtnStyle = { background: '#f0f3f4', border: 'none', borderRadius: '8px', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' };
-const addGroupBtnStyle = { display: 'flex', alignItems: 'center', gap: '5px', padding: '10px 15px', backgroundColor: '#9b59b6', color: 'white', border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: 'bold' };
-const genBtnStyle = { display: 'flex', alignItems: 'center', gap: '5px', padding: '10px 15px', backgroundColor: '#3498db', color: 'white', border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: 'bold' };
-const backBtnStyle = { border: 'none', background: 'none', color: '#3498db', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '5px' };
+const addGroupBtnStyle = { display: 'flex', alignItems: 'center', gap: '5px', padding: '10px 15px', backgroundColor: '#9b59b6', color: 'white', border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: 'bold', cursor: 'pointer' };
+const genBtnStyle = { display: 'flex', alignItems: 'center', gap: '5px', padding: '10px 15px', backgroundColor: '#3498db', color: 'white', border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: 'bold', cursor: 'pointer' };
+const backBtnStyle = { border: 'none', background: 'none', color: '#3498db', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' };
 const draggableNoteStyle = { display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '12px', backgroundColor: '#fcfcfc', borderRadius: '10px', width: '100%', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', touchAction: 'pan-y' };
 const draggableImgWrapperStyle = { cursor: 'grab', position: 'relative', borderRadius: '10px', overflow: 'hidden', width: '100px', height: '100px', touchAction: 'pan-y' };
 const draggableImgStyle = { width: '100%', height: '100%', objectFit: 'cover' };
-const deleteImgOverlayBtnStyle = { position: 'absolute', top: '4px', right: '4px', backgroundColor: 'rgba(231, 76, 60, 0.9)', color: 'white', border: 'none', borderRadius: '50%', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center' };
+const deleteImgOverlayBtnStyle = { position: 'absolute', top: '4px', right: '4px', backgroundColor: 'rgba(231, 76, 60, 0.9)', color: 'white', border: 'none', borderRadius: '50%', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 10 };
 const editIconBtnStyle = { background: 'none', border: 'none', color: '#95a5a6', padding: '5px', cursor: 'pointer' };
 const deleteIconBtnStyle = { background: 'none', border: 'none', padding: '5px', cursor: 'pointer' };
 const editInputStyle = { flex: 1, padding: '8px', borderRadius: '8px', border: '1px solid #ddd' };
 const saveEditBtnStyle = { backgroundColor: '#2ecc71', color: 'white', border: 'none', borderRadius: '8px', padding: '0 12px', cursor: 'pointer' };
-const cancelMiniBtnStyle = { backgroundColor: '#e74c3c', color: 'white', border: 'none', borderRadius: '8px', padding: '0 12px', cursor: 'pointer' };
