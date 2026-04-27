@@ -14,11 +14,10 @@ export default function ReportView({ activeReport, setView }) {
 
   const handlePrint = () => { const o = document.title; document.title = activeReport.title || 'StoreCheck_Report'; window.print(); document.title = o; };
 
-  // פונקציה למדידת מידות התמונה המקוריות בזיכרון לפני הייצוא לוורד
   const getImgSize = (src) => new Promise(resolve => {
     const img = new Image();
     img.onload = () => resolve({ w: img.width, h: img.height });
-    img.onerror = () => resolve({ w: 400, h: 300 }); // גיבוי למקרה שגיאה
+    img.onerror = () => resolve({ w: 400, h: 300 });
     img.src = src;
   });
 
@@ -38,32 +37,48 @@ export default function ReportView({ activeReport, setView }) {
         notes.forEach(n => { gHtml += `<div style="padding: 10pt; border-right: 5pt solid #3498db; background: #f4f7f9; margin-bottom: 10pt; font-family: Arial; font-size: 12pt; direction: rtl; text-align: right;">${n.text}</div>`; });
 
         if (images.length > 0) {
-          // הגדרת המרחב המקסימלי המותר לכל תמונה בהתאם לכמות
           let cols = 1, maxW = 420, maxH = 450;
           if (images.length === 2) { cols = 2; maxW = 200; maxH = 400; }
           else if (images.length <= 4) { cols = 2; maxW = 200; maxH = 200; }
           else { cols = 3; maxW = 130; maxH = 150; }
 
           gHtml += `<table width="100%" cellspacing="5" cellpadding="0"><tr>`;
+          let noteCounter = 1;
+          const imageNotesList = [];
+
           for (let idx = 0; idx < images.length; idx++) {
             const img = images[idx];
             if (idx > 0 && idx % cols === 0) gHtml += `</tr><tr>`;
-            
-            // חישוב מתמטי מדויק - שמירת פרופורציה בתוך המסגרת המותרת!
             const size = await getImgSize(img.url || img.localUrl);
             const ratio = size.w / size.h;
             let targetW = maxW;
             let targetH = targetW / ratio;
             if (targetH > maxH) { targetH = maxH; targetW = targetH * ratio; }
 
+            let noteMarker = '';
+            if (img.note) {
+              noteMarker = `<div style="font-size: 11pt; font-family: Arial; font-weight: bold; color: #3498db; margin-top: 4pt;">תמונה [${noteCounter}]</div>`;
+              imageNotesList.push({ idx: noteCounter, text: img.note });
+              noteCounter++;
+            }
+
             gHtml += `<td align="center" valign="top" style="border: 0.5pt solid #eee; padding: 5pt;">
               <img src="${img.url || img.localUrl}" width="${Math.round(targetW)}" height="${Math.round(targetH)}" style="display: block; margin: 0 auto;" />
-              ${img.note ? `<div style="background: #fdf9e7; padding: 4pt; font-size: 9pt; font-family: Arial; margin-top: 4pt; direction: rtl; text-align: right; border-right: 2pt solid #f1c40f;">${img.note}</div>` : ''}
+              ${noteMarker}
             </td>`;
           }
           const rem = (cols - (images.length % cols)) % cols;
           for(let i=0; i<rem; i++) gHtml += `<td></td>`;
           gHtml += `</tr></table>`;
+
+          if (imageNotesList.length > 0) {
+            gHtml += `<div style="margin-top: 10pt; padding: 10pt; background: #fdf9e7; border-right: 4pt solid #f1c40f; direction: rtl; text-align: right; font-family: Arial;">`;
+            gHtml += `<div style="font-weight: bold; font-size: 12pt; color: #1a365d; margin-bottom: 5pt;">הערות לתמונות:</div>`;
+            imageNotesList.forEach(n => {
+              gHtml += `<div style="font-size: 11pt; color: #2c3e50; margin-bottom: 4pt;"><strong>[${n.idx}]</strong> ${n.text}</div>`;
+            });
+            gHtml += `</div>`;
+          }
         }
         gHtml += `</td></tr></table><br style="page-break-before:always;" />`;
         groupsHtml += gHtml;
@@ -72,9 +87,7 @@ export default function ReportView({ activeReport, setView }) {
       const body = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset='utf-8'><style>@page { size: A4; margin: 40pt; } body { font-family: Arial, sans-serif; direction: rtl; }</style></head><body>${cover}${groupsHtml}</body></html>`;
       const blob = new Blob(['\ufeff', body], { type: 'application/msword' });
       const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `${activeReport.title}.doc`; link.click();
-    } finally {
-      setIsExporting(false);
-    }
+    } finally { setIsExporting(false); }
   };
 
   return (
@@ -84,7 +97,7 @@ export default function ReportView({ activeReport, setView }) {
         <button onClick={() => setView('tour')} style={backBtnStyle}><ArrowRight size={20} /> חזרה</button>
         <div style={{ display: 'flex', gap: '10px' }}>
           <button onClick={exportToDoc} style={{...docsBtnStyle, opacity: isExporting ? 0.7 : 1}} disabled={isExporting}>
-            {isExporting ? <span style={{display:'flex', alignItems:'center', gap:'5px'}}><Loader size={16} className="spin" /> מחשב תמונות...</span> : 'ייצא ל-Docs'}
+            {isExporting ? <span style={{display:'flex', alignItems:'center', gap:'5px'}}><Loader size={16} className="animate-spin" /> מחשב...</span> : 'ייצא ל-Docs'}
           </button>
           <button onClick={handlePrint} style={printBtnStyle}>שמור PDF</button>
         </div>
@@ -100,11 +113,44 @@ export default function ReportView({ activeReport, setView }) {
         {activeReport.groups && activeReport.groups.map(g => {
           const items = g.items || [...(g.images?.map(u => ({ type: 'image', url: u })) || []), ...(g.notes?.map(t => ({ type: 'note', text: t })) || [])];
           const notes = items.filter(i => i.type === 'note'); const images = items.filter(i => i.type === 'image');
+          
+          let currentNoteIndex = 0;
+          
           return (
             <div key={g.id} className="report-group-page" style={reportGroupStyle}>
               <h3 style={groupHeaderStyle}>{g.title || 'קבוצה'}</h3>
               {notes.length > 0 && <div style={notesContainerStyle}>{notes.map((n, i) => <div key={i} style={noteItemStyle}>{n.text}</div>)}</div>}
-              {images.length > 0 && <div style={{ ...imageGridContainerStyle, ...getImageGridStyle(images.length) }}>{images.map((img, i) => <div key={i} style={imageWrapperStyle}><img src={img.url || img.localUrl} style={imageStyle} alt="store" />{img.note && <div style={attachedNoteOverlayStyle}><strong>הערה:</strong> {img.note}</div>}</div>)}</div>}
+              
+              {images.length > 0 && (
+                <>
+                  <div style={{ ...imageGridContainerStyle, ...getImageGridStyle(images.length) }}>
+                    {images.map((img, i) => {
+                      let badgeNum = null;
+                      if (img.note) {
+                        currentNoteIndex++;
+                        badgeNum = currentNoteIndex;
+                      }
+                      return (
+                        <div key={i} style={imageWrapperStyle}>
+                          <img src={img.url || img.localUrl} style={imageStyle} alt="store" />
+                          {badgeNum && <div style={imageIndexBadgeStyle}>{badgeNum}</div>}
+                        </div>
+                      )
+                    })}
+                  </div>
+                  
+                  {images.some(img => img.note) && (
+                    <div style={imageNotesListStyle}>
+                      <div style={{fontWeight: 'bold', fontSize: '15px', color: '#1a365d', marginBottom: '8px'}}>הערות לתמונות:</div>
+                      {images.map((img, i) => {
+                        if (!img.note) return null;
+                        const num = images.filter((x, idx) => x.note && idx <= i).length;
+                        return <div key={i} style={{fontSize: '14px', color: '#2c3e50', marginBottom: '4px'}}><strong>[{num}]</strong> {img.note}</div>
+                      })}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           );
         })}
@@ -122,7 +168,8 @@ const noteItemStyle = { padding: '12px 18px', borderRight: '6px solid #3498db', 
 const imageGridContainerStyle = { display: 'grid', gap: '3px', flex: 1, minHeight: 0 };
 const imageWrapperStyle = { position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fdfdfd', overflow: 'hidden', height: '100%' };
 const imageStyle = { width: '100%', height: '100%', objectFit: 'contain' };
-const attachedNoteOverlayStyle = { position: 'absolute', bottom: 0, left: 0, right: 0, padding: '6px 12px', backgroundColor: 'rgba(255, 255, 255, 0.9)', borderTop: '2.5px solid #f1c40f', fontSize: '13px', color: '#1a365d' };
+const imageIndexBadgeStyle = { position: 'absolute', top: '8px', right: '8px', backgroundColor: '#3498db', color: 'white', width: '28px', height: '28px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '14px', boxShadow: '0 2px 4px rgba(0,0,0,0.3)' };
+const imageNotesListStyle = { marginTop: '15px', padding: '12px', backgroundColor: '#fdf9e7', borderRight: '4px solid #f1c40f' };
 const printBtnStyle = { padding: '12px 24px', backgroundColor: '#27ae60', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' };
 const docsBtnStyle = { padding: '12px 24px', backgroundColor: '#4285F4', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' };
 const backBtnStyle = { border: 'none', background: 'none', color: '#3498db', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 'bold', fontSize: '17px' };
